@@ -7,6 +7,7 @@
 
 import json
 import logging
+import time
 from pathlib import Path
 
 log = logging.getLogger("brain.tools")
@@ -14,6 +15,42 @@ log = logging.getLogger("brain.tools")
 
 def _s(**props):
     return {"type": "object", "properties": props}
+
+
+def sanitize_chat(text: str) -> str:
+    """净化聊天内容：剔除 Minecraft 不允许的字符（否则服务端踢人 非法聊天字符）。
+
+    允许范围对齐原版 SharedConstants.isAllowedChatCharacter：
+    ASCII、CJK、日韩假名、常用符号区等；emoji（辅助平面，如 🌲🪵👍）全部剔除。
+    """
+    out = []
+    for ch in text:
+        code = ord(ch)
+        ok = (0x20 <= code <= 0xFF
+              or 0x300 <= code <= 0x36F
+              or 0x2000 <= code <= 0x206F
+              or 0x20A0 <= code <= 0x20CF
+              or 0x20D0 <= code <= 0x20FF
+              or 0x2100 <= code <= 0x214F
+              or 0x2600 <= code <= 0x27BF
+              or 0x2B00 <= code <= 0x2BFF
+              or 0x3000 <= code <= 0x303F
+              or 0x3040 <= code <= 0x309F
+              or 0x30A0 <= code <= 0x30FF
+              or 0x3400 <= code <= 0x4DBF
+              or 0x4E00 <= code <= 0x9FFF
+              or 0xA000 <= code <= 0xA4CF
+              or 0xAC00 <= code <= 0xD7A3
+              or 0xF900 <= code <= 0xFAFF
+              or 0xFE30 <= code <= 0xFE4F
+              or 0xFF00 <= code <= 0xFF60
+              or 0xFFE0 <= code <= 0xFFE6)
+        if ok:
+            out.append(ch)
+    cleaned = "".join(out).strip()
+    if cleaned != text:
+        log.info("聊天内容已净化（剔除非法字符 %d 个）", len(text) - len(cleaned))
+    return cleaned
 
 
 # ── 工具定义（schema）──────────────────────────────────────────────
@@ -59,6 +96,25 @@ class Toolset:
         self.client = client
         self.brain_cfg = brain_cfg
         self.memory = memory
+        self.sent_chats = []  # [(message, 时间戳)]：AI 最近发送的聊天，用于过滤自身回显
+
+    def is_echo(self, event_data) -> bool:
+        """是否 AI 自己刚发的消息回显。
+
+        chat 工具以玩家身份发送 → 回显事件与玩家消息在协议层面无法区分
+        （self 恒为 true），只能按文本匹配：与最近 120s 内 AI 发过的消息
+        一致的视为回显（玩家恰好重复同一句话的极小概率可接受）。
+        """
+        msg = (event_data or {}).get("message", "")
+        if not msg:
+            return False
+        now = time.time()
+        for m, ts in reversed(self.sent_chats):
+            if now - ts > 120:
+                continue
+            if m == msg:
+                return True
+        return False
 
     @property
     def schemas(self):
@@ -149,7 +205,12 @@ class Toolset:
 
     # ── 聊天 ─────────────────────────────────────────────────────
     def do_chat(self, args):
-        return self.client.ok("chat", args)
+        msg = sanitize_chat(str(args.get("message", "")))
+        if msg:
+            self.sent_chats.append((msg, time.time()))
+            if len(self.sent_chats) > 20:
+                self.sent_chats.pop(0)
+        return self.client.ok("chat", {"message": msg})
 
     # ── 记忆 ─────────────────────────────────────────────────────
     def do_update_memory(self, args):

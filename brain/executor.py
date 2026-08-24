@@ -12,7 +12,7 @@ import json
 import logging
 import time
 
-from skills.base import SkillContext
+from skills._base import SkillContext
 
 log = logging.getLogger("brain.executor")
 
@@ -24,6 +24,10 @@ class PlanInterrupt(Exception):
         super().__init__(f"PlanInterrupt({kind}): {reason}")
         self.kind = kind
         self.reason = reason
+
+
+class ConnectionLost(Exception):
+    """与 Tower 的连接已失效（健康检查连续失败）——冒泡到主循环重建连接。"""
 
 
 def _s(**props):
@@ -38,10 +42,13 @@ PLAN_TOOL = {
         "description": (
             "输出结构化任务计划：goal（一句话目标）+ steps（步骤序列，最多 8 个）+ accept（验收条件）。"
             "步骤 type=skill 引用下方技能清单里的技能（技能内部已处理细节，如砍树/合成/渡河）；"
-            "type=tool 直接调用工具动作（move_to/get_blocks/get_state 等）。"
-            "大脑会严格按顺序执行全部步骤——执行阶段不再经过你，所以必须把「获取信息」和「验证结果」"
-            "都写成显式步骤（如先 get_blocks 找树，最后 get_state 检查背包）。"
-            "on_fail 决定某步骤失败时是跳过继续（report）还是中止（stop）。"
+            "type=tool 直接调用工具动作（move_to/get_state 等）。"
+            "上下文附有【环境预扫描】坐标清单（树/水/岩浆/矿石/怪物/动物）和当前状态——"
+            "直接引用坐标即可，不要调用任何查询工具（查询全部由大脑代码完成）。"
+            "如砍树可给 mine_wood 传 x/y/z 指定砍哪棵；渡河可给 cross_water 传对岸坐标；"
+            "移动用 move_to{x,y,z}。步骤不含坐标也能执行（技能会自己找目标），但给了更精确。"
+            "大脑会严格按顺序执行全部步骤——执行阶段不再经过你，所以必须把「验证结果」写成显式步骤"
+            "（如最后 get_state 检查背包）。某步骤失败时会暂停，请你重新规划（可跳过/换方案/说明无法完成）。"
         ),
         "parameters": _s(
             goal={"type": "string", "description": "一句话任务目标"},
@@ -58,6 +65,26 @@ PLAN_TOOL = {
                      "description": "report=某步失败跳过继续（默认）；stop=失败即中止任务"},
         ),
         "required": ["goal", "steps", "accept"],
+        "additionalProperties": False,
+    },
+}
+
+# 复杂任务的总大纲工具（几十步长任务：LLM 只输出抽象步骤，逐级执行）
+OUTLINE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "outline",
+        "description": (
+            "输出复杂任务的总大纲：title（任务名）+ steps（抽象步骤列表，可几十步）。"
+            "大脑会存入临时文件并逐级执行——每步会再次请你排具体执行计划，"
+            "所以这里只写阶段级步骤（如「获得原木」「制作工作台和木镐」），不要写工具调用细节。"
+        ),
+        "parameters": _s(
+            title={"type": "string", "description": "任务名（一句话）"},
+            steps={"type": "array", "description": "阶段步骤（每步一句话，按序执行，最多 50 步）",
+                   "items": {"type": "string"}},
+        ),
+        "required": ["title", "steps"],
         "additionalProperties": False,
     },
 }
@@ -143,6 +170,7 @@ class PlanExecutor:
         self._ctx = SkillContext(client, tools, executor=self, skills=skills)
         self._last_check = 0.0
         self._last_patrol = 0.0
+        self._conn_fails = 0
 
     # ── 状态与查询 ──────────────────────────────────────────────
     def reset(self):
@@ -152,7 +180,9 @@ class PlanExecutor:
         self.pending_chat = []
 
     def status_text(self) -> str:
-        """当前任务状态（注入 LLM 上下文，供玩家新消息分流）。"""
+        """当前任务状态（注入 LLM 上下文/UI 面板；plan 未就绪时返回占位）。"""
+        if self.plan is None:
+            return "（空闲）"
         lines = [f"目标：{self.plan['goal']}",
                  f"进度：第 {self.step_i + 1}/{len(self.plan['steps'])} 步（on_fail={self.plan.get('on_fail')}）"]
         for idx, (step, result) in enumerate(self.results):
@@ -192,10 +222,9 @@ class PlanExecutor:
                 return f"urgent:{pi.reason}"
             self.results.append((step, result))
             if result.startswith("失败"):
-                if plan.get("on_fail") == "stop":
-                    self.safe_stop()
-                    return f"failed_stop:{step['name']}"
-                log.warning("步骤 %s 失败（跳过继续）: %s", step["name"], result[:120])
+                # 步骤失败：暂停计划，由大脑让 LLM 自适应重规划（不盲目跳过下一步）
+                self.safe_stop()
+                return f"step_failed:{step['name']}:{result[:150]}"
             # 步骤边界：等待期间（interruptible=False）缓存的玩家消息
             if self.pending_chat:
                 self.step_i = i + 1                  # 本步已完成，resume 从下一步开始
@@ -225,6 +254,8 @@ class PlanExecutor:
                 if name in ("damage", "death"):
                     raise PlanInterrupt("urgent", f"收到 {name} 事件")
                 if name == "chat":
+                    if self.tools.is_echo(e.get("data", {})):
+                        continue  # AI 自己刚发的消息回显（文本匹配），忽略
                     self.pending_chat.append(e.get("data", {}))
                     if interruptible:
                         raise PlanInterrupt("chat", "等待期间收到玩家消息")
@@ -244,8 +275,13 @@ class PlanExecutor:
         self._last_check = now
         try:
             state = self.client.ok("get_state")
+            self._conn_fails = 0
         except Exception as e:
-            log.debug("健康检查失败: %s", e)
+            # 连续失败判定连接失效（websockets keepalive 断线不会到主线程）
+            self._conn_fails += 1
+            log.debug("健康检查失败（第 %d 次）: %s", self._conn_fails, e)
+            if self._conn_fails >= 2:
+                raise ConnectionLost(f"健康检查连续失败：{e}")
             return
         health = state.get("player", {}).get("health", 20)
         if health < 6:

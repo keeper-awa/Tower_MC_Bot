@@ -1,5 +1,26 @@
 #!/usr/bin/env python3
-"""技能共用工具：背包遍历 / 方块查找（`_` 前缀文件，不注册为技能）。"""
+"""技能共用工具：背包遍历 / 方块查找 / 状态轮询（`_` 前缀文件，不注册为技能）。"""
+
+import logging
+import time
+
+log = logging.getLogger("brain.skills")
+
+
+def poll(ctx, check_fn, timeout=6.0, interval=0.5) -> bool:
+    """轮询等待条件成立（掉落拾取/合成生效有延迟，立即 get_state 会读到旧状态）。
+
+    check_fn(state) → bool；超时返回 False。
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            if check_fn(ctx.ok("get_state")):
+                return True
+        except Exception as e:
+            log.debug("轮询 get_state 失败: %s", e)
+        time.sleep(interval)
+    return False
 
 
 def iter_items(state):

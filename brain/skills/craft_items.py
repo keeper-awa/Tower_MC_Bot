@@ -12,38 +12,67 @@
 
 import logging
 
-from ._util import count_items, find_slot, player_pos
-from .base import Skill
+from ._util import count_items, find_slot, player_pos, poll
+from ._base import Skill
 
 log = logging.getLogger("brain.skills")
 
 
 class CraftItemsSkill(Skill):
     name = "craft_items"
-    description = "合成指定物品：2x2 配方直接个人格合成；3x3 配方自动准备并摆放工作台"
-    # args: {"recipe": "minecraft:xxx", "item": "成品物品 id"}
+    description = ("合成。必传recipe(配方id,如minecraft:oak_planks)与item(成品id)；"
+                   "count=数量(缺省尽量多合成，如要 1 个工作台就传 count:1)；3x3配方自动摆工作台")
 
     def run(self, ctx, args):
         recipe = args.get("recipe")
         item = args.get("item")
         if not recipe or not item:
             return "失败：缺少参数（需要 recipe 与 item，如 {recipe: minecraft:oak_planks, item: minecraft:oak_planks}）"
-
         try:
-            ctx.ok("craft", {"recipe": recipe, "shift": True})
-            log.info("个人合成格直接合成成功")
-        except Exception as e:
-            log.info("个人合成格失败（可能是 3x3 配方）: %s", e)
-            if not self._craft_with_table(ctx, recipe):
-                return "失败：合成失败（含工作台方案）"
+            want = max(1, int(args.get("count", 0))) if args.get("count") is not None else None
+        except (TypeError, ValueError):
+            return "失败：count 参数必须是整数"
 
+        # 基线：合成前该物品数量（验证必须对比增量——已持有部分时 count>0 会平凡成立）
         state = ctx.ok("get_state")
-        if count_items(state, exact=item) > 0:
+        before = count_items(state, exact=item)
+
+        if want is None:
+            # 未指定数量：尽量多合成（shift=True）
+            try:
+                ctx.ok("craft", {"recipe": recipe, "shift": True})
+                log.info("个人合成格直接合成成功")
+            except Exception as e:
+                log.info("个人合成格失败（可能是 3x3 配方）: %s", e)
+                if not self._craft_with_table(ctx, recipe, shift=True):
+                    return "失败：合成失败（含工作台方案）"
+        else:
+            # 指定数量：逐次合成直到达标（shift=False 一次做一个；上限防失控）
+            current = before
+            for _ in range(min(want, 64)):
+                if current >= before + want:
+                    break
+                try:
+                    ctx.ok("craft", {"recipe": recipe, "shift": False})
+                except Exception as e:
+                    log.info("个人合成格失败（可能是 3x3 配方）: %s", e)
+                    if not self._craft_with_table(ctx, recipe, shift=False):
+                        break
+                # 等本次产出落地再点下一次（craft 响应乐观——点击已发但产出延迟数百 ms，
+                # 立即重查会读到旧数量导致重复点击、材料双倍消耗）
+                if poll(ctx, lambda st: count_items(st, exact=item) > current, timeout=6.0, interval=0.6):
+                    current = count_items(ctx.ok("get_state"), exact=item)
+                else:
+                    break
+
+        # craft 响应是乐观的（sent=已点击），实际产出延迟数秒：轮询等增量（最多 10s）
+        target = before + (want or 1)
+        if poll(ctx, lambda st: count_items(st, exact=item) >= target, timeout=10.0):
             return "完成：合成成功"
-        return f"失败：合成后背包没有 {item}"
+        return f"失败：合成后 {item} 数量未增加"
 
     # ── 工作台方案 ──────────────────────────────────────────────
-    def _craft_with_table(self, ctx, recipe) -> bool:
+    def _craft_with_table(self, ctx, recipe, shift=True) -> bool:
         """确保有工作台并摆放到身旁地面，再合成。"""
         state = ctx.ok("get_state")
         if count_items(state, exact="minecraft:crafting_table") == 0:
@@ -62,7 +91,7 @@ class CraftItemsSkill(Skill):
         ground = self._place_spot(ctx, player_pos(state))
         ctx.ok("interact_block", ground)  # 手持工作台右键地面方块 → 摆放到其上方
         try:
-            ctx.ok("craft", {"recipe": recipe, "shift": True})
+            ctx.ok("craft", {"recipe": recipe, "shift": shift})
             return True
         except Exception as e:
             log.warning("摆放工作台后合成仍失败: %s", e)

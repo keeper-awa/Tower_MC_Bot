@@ -7,13 +7,12 @@
 
 import time
 
-from .base import Skill
+from ._base import Skill
 
 
 class WaitSkill(Skill):
     name = "wait"
-    description = "原地等待指定秒数（如等待作物生长、怪物刷新）；等待期间持续安全监测"
-    # args: {"seconds": 5}
+    description = "等待seconds秒（如等作物生长/怪物刷新）"
 
     def run(self, ctx, args):
         try:

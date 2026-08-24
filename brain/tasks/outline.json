@@ -1,0 +1,13 @@
+{
+  "title": "dry-run 大纲",
+  "steps": [
+    "步骤A",
+    "步骤B"
+  ],
+  "idx": 2,
+  "results": {
+    "0": "目标：dry-run 步骤A（验收：dry-run）\n1. get_state: {\"protocol\": 1, \"player\": {\"position\": {\"x\": 528.8074549287661, \"y\": 64.0, \"z\": -229.7201780107588}, \"rotation\": {\"yaw\": 145.10179, \"pitch\": 1.3951724}, \"motio",
+    "1": "目标：dry-run 步骤B（验收：dry-run）\n1. update_memory: 已记录（memory.md 第 6 条）"
+  },
+  "status": "done"
+}

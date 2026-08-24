@@ -11,14 +11,14 @@ import logging
 import time
 
 from ._util import player_pos
-from .base import Skill
+from ._base import Skill
 
 log = logging.getLogger("brain.skills")
 
 
 class CrossWaterSkill(Skill):
     name = "cross_water"
-    description = "渡河/自救：给定对岸坐标（x/y/z）自动驾驶渡河；无坐标时落水自救游上岸"
+    description = "渡河。x/y/z=对岸坐标；无参数=落水自救"
 
     def run(self, ctx, args):
         if args.get("x") is not None:

@@ -11,15 +11,15 @@
 
 import logging
 
-from ._util import count_items, iter_items
-from .base import Skill
+from ._util import count_items, iter_items, poll
+from ._base import Skill
 
 log = logging.getLogger("brain.skills")
 
 
 class MakeCraftingTableSkill(Skill):
     name = "make_crafting_table"
-    description = "制作工作台：背包已有则跳过；否则砍树 → 合成木板 → 合成工作台"
+    description = "制作一个工作台（只做 1 个）：背包已有则跳过；否则砍树 → 合成木板 → 合成工作台"
 
     def run(self, ctx, args):
         state = ctx.ok("get_state")
@@ -36,10 +36,11 @@ class MakeCraftingTableSkill(Skill):
             return "失败：砍完树但背包没有原木"
         planks_recipe = log_id.replace("_log", "_planks")  # minecraft:oak_log → minecraft:oak_planks
         ctx.ok("craft", {"recipe": planks_recipe, "shift": True})
-        ctx.ok("craft", {"recipe": "minecraft:crafting_table", "shift": True})
+        # 工作台只做一个（shift=False；shift=True 会把所有木板全合成工作台）
+        ctx.ok("craft", {"recipe": "minecraft:crafting_table", "shift": False})
 
-        state = ctx.ok("get_state")
-        if count_items(state, exact="minecraft:crafting_table") > 0:
+        # craft 响应乐观、产出延迟：轮询等增量（最多 10s）
+        if poll(ctx, lambda st: count_items(st, exact="minecraft:crafting_table") > 0, timeout=10.0):
             return "完成：工作台已制作"
         return "失败：合成后背包没有工作台"
 

@@ -13,7 +13,6 @@ import base64
 import io
 import json
 import logging
-import os
 import time
 
 log = logging.getLogger("brain.llm")
@@ -24,11 +23,11 @@ class LLMError(RuntimeError):
 
 
 class LLM:
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg: dict, api_key: str = None):
         self.cfg = cfg
-        api_key = cfg.get("api_key") or os.environ.get("DEEPSEEK_API_KEY")
+        # key 唯一来源：大脑传入的 config/api_key.json（无其他兜底）
         if not api_key:
-            raise LLMError("未配置 API key：请填写 brain/config.yaml 的 api.api_key 或设置环境变量 DEEPSEEK_API_KEY")
+            raise LLMError("未配置 API key：请填写 config/api_key.json 中的 api_key 后重启大脑")
         # 延迟导入：dry-run 模式不依赖 openai SDK
         from openai import OpenAI
 
@@ -72,6 +71,12 @@ class LLM:
             except json.JSONDecodeError:
                 args = {}
             tool_calls.append({"id": tc.id, "name": tc.function.name, "arguments": args})
+        # 诊断：响应形态（finish_reason 为 length 说明被 max_tokens 截断）
+        log.info("LLM 响应: finish=%s text_len=%d tool_calls=%d",
+                 getattr(resp.choices[0], "finish_reason", "?"), len(text), len(tool_calls))
+        for tc in tool_calls:
+            log.info("LLM 工具调用: %s %s", tc["name"],
+                     json.dumps(tc["arguments"], ensure_ascii=False)[:300])
         return {
             "text": text,
             "tool_calls": tool_calls,

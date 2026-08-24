@@ -14,9 +14,10 @@ log = logging.getLogger("brain.memory")
 
 
 class MemoryManager:
-    def __init__(self, memory_dir: Path, max_bytes: int = 20000):
+    def __init__(self, memory_dir: Path, max_bytes: int = 20000, inject_limit: int = 2000):
         self.memory_dir = Path(memory_dir)
         self.max_bytes = max_bytes
+        self.inject_limit = inject_limit  # 注入 system prompt 的截断长度（省 token）
         self.goals_path = self.memory_dir / "goals.md"
         self.memory_path = self.memory_dir / "memory.md"
         self._ensure_files()
@@ -30,7 +31,9 @@ class MemoryManager:
     def inject(self) -> str:
         """拼装经验教训供 system prompt 使用（goals 不再注入——AI 不再自设目标）。"""
         lessons = self._read(self.memory_path)
-        return f"【经验教训】\n{lessons}"
+        if len(lessons) > self.inject_limit:
+            lessons = lessons[:self.inject_limit] + "\n...(经验超长已截断)"
+        return f"【经验】\n{lessons}"
 
     def append(self, section: str, content: str) -> str:
         """追加一条带编号经验教训；返回提示文本给 LLM。"""

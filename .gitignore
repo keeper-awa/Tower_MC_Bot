@@ -24,3 +24,13 @@ runs
 run-data
 
 repo
+
+# python
+__pycache__/
+*.pyc
+
+# API key（唯一存放处，不提交）
+api_key.json
+
+# 打包产物
+brain/dist/
