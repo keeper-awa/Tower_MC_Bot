@@ -1,0 +1,28 @@
+# Tower AI 大脑配置（M5.2：玩家指令驱动 + 技能代码化执行）
+# 修改后重启大脑生效
+
+api:
+  base_url: "https://api.deepseek.com/v1"
+  api_key: ""                              # ← 在这里填 DeepSeek API key（也可设环境变量 DEEPSEEK_API_KEY 覆盖）
+  model: "deepseek-v4-flash"               # 日常文本/决策模型（用户确认）
+  vision_model: "deepseek-v4-flash-vision-exp"  # 看截图时切换（D2 决策，M5.3 视觉管线用）
+  temperature: 0.7
+  max_tokens: 2048
+
+connection:
+  host: "127.0.0.1"
+  port: 24778
+  game_dir: "D:\\整合包\\.minecraft\\versions\\1.20.1-NeoForge_47.1.106"   # 读取 config/tower.json 的 token（决策 A）
+
+brain:
+  # M5.2 起无自主周期：LLM 只排工作流 + 聊天；以下为执行器/巡检参数
+  plan_retries: 1                          # 无效计划最多重试次数（每次最多 +1 次 LLM 调用）
+  plan_max_steps: 8                        # 计划步骤上限（超出截断并警告）
+  default_wait_timeout: 60                 # 技能等事件默认超时（秒）
+  safety_patrol_interval: 30               # 纯代码安全巡检周期（秒，不调 LLM）
+  safety_check_interval: 5                 # 执行中 wait_event 健康检查间隔（秒）
+  visual_max_px: 800                       # 截图压缩最长边（M5.3 视觉管线）
+  memory_max_bytes: 20000                  # memory.md 文件大小上限（LLM 写入保护）
+
+persona:
+  name: "未命名"                            # M6 人设系统接入前先用默认值

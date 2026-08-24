@@ -1,0 +1,40 @@
+# Tower mods.toml (1.20.1, javafml loader)
+# 客户端 mod（clientSideOnly=true）：感知/导航/视觉均需客户端世界与渲染
+# displayTest 使用默认 MATCH_VERSION（客户端/服务端版本须一致）
+
+modLoader="javafml" #mandatory
+loaderVersion="[47,)" #mandatory
+
+license="All Rights Reserved"
+
+[[mods]] #mandatory
+modId="tower" #mandatory
+version="0.1.0" #mandatory
+displayName="Tower" #mandatory
+description='''Tower: AI 智能体 Mod（客户端）。
+提供感知（方块/实体/射线）、导航（原版寻路 move_to）、视觉（截图）能力；
+转发执行动作给前置 Keyboard mod（本地 WebSocket 24777），对外提供 Tower 协议（24778）。
+零外部依赖（使用 MC 自带 Netty + Gson）。'''
+
+[[dependencies.tower]]
+    modId="forge" #mandatory
+    mandatory=true #mandatory
+    # [47,) 兼容两条线：Forge 47.4.x 与 NeoForge 47.1.x（1.20.1 两者 loader 版本均为 47.x）
+    versionRange="[47,)" #mandatory
+    ordering="NONE"
+    side="CLIENT"
+
+[[dependencies.tower]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.20.1, 1.21)"
+    ordering="NONE"
+    side="CLIENT"
+
+# 前置 Keyboard mod：非强制依赖（Tower 单独运行时可加载，转发动作返回 501）
+[[dependencies.tower]]
+    modId="keyboard"
+    mandatory=false
+    versionRange="[0.1,)"
+    ordering="NONE"
+    side="CLIENT"

@@ -1,0 +1,53 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "Client",
+      "presentation": {
+        "group": "Mod Development - tower",
+        "order": 0
+      },
+      "projectName": "tower",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@D:\\ClaudeCode\\Tower_1.20.1\\build\\moddev\\clientRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@D:\\ClaudeCode\\Tower_1.20.1\\build\\moddev\\clientRunVmArgs.txt",
+        "-Dfml.modFolders\u003dtower%%D:\\ClaudeCode\\Tower_1.20.1\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\run",
+      "env": {
+        "MOD_CLASSES": "tower%%D:\\ClaudeCode\\Tower_1.20.1\\bin\\main"
+      },
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    },
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "Server",
+      "presentation": {
+        "group": "Mod Development - tower",
+        "order": 1
+      },
+      "projectName": "tower",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@D:\\ClaudeCode\\Tower_1.20.1\\build\\moddev\\serverRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@D:\\ClaudeCode\\Tower_1.20.1\\build\\moddev\\serverRunVmArgs.txt",
+        "-Dfml.modFolders\u003dtower%%D:\\ClaudeCode\\Tower_1.20.1\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\run",
+      "env": {
+        "MOD_CLASSES": "tower%%D:\\ClaudeCode\\Tower_1.20.1\\bin\\main"
+      },
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    }
+  ]
+}
