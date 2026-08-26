@@ -110,16 +110,28 @@ def connect_until_ready(token, port=24778, tries=30):
     raise SystemExit("前置链路等待超时（游戏是否已启动并进世界？）")
 
 
+def _default_game_dir() -> Path:
+    """从 brain/config.yaml 读取游戏目录（绝对路径）。"""
+    cfg = Path(__file__).resolve().parent / "config.yaml"
+    try:
+        import yaml
+
+        return Path(yaml.safe_load(cfg.read_text(encoding="utf-8"))["connection"]["game_dir"])
+    except Exception:
+        return Path(__file__).resolve().parent.parent
+
+
 def demo() -> int:
     """M1.2 演示：连接 / hello（含 prereq）/ 心跳 / 断开。"""
     parser = argparse.ArgumentParser(description="Tower 示例客户端（M1.2 演示）")
     parser.add_argument("--token", default=None, help="连接 token（缺省读游戏 config/tower.json）")
     parser.add_argument("--port", type=int, default=24778)
-    parser.add_argument("--game-dir", default=r"D:\整合包\.minecraft\versions\1.20.1-NeoForge_47.1.106")
+    parser.add_argument("--game-dir", default=None, help="游戏目录（缺省读 brain/config.yaml 绝对路径）")
     args = parser.parse_args()
     token = args.token
     if not token:
-        cfg = Path(args.game_dir) / "config" / "tower.json"
+        game_dir = Path(args.game_dir) if args.game_dir else _default_game_dir()
+        cfg = game_dir / "config" / "tower.json"
         if cfg.exists():
             token = json.loads(cfg.read_text(encoding="utf-8"))["token"]
         else:

@@ -10,9 +10,9 @@ Tower = Minecraft 1.20.1 NeoForge 客户端 mod（AI 协议桥：Python 大脑 �
 ## 1. 构建与部署
 
 ```bash
-cd d:/ClaudeCode/Tower_1.20.1
+cd h:/Tower_MC_Bot
 ./gradlew build -x test --console=plain    # 编译（~2s，配置缓存）
-cp build/libs/tower-0.1.0.jar "D:/整合包/.minecraft/versions/1.20.1-NeoForge_47.1.106/mods/tower-0.1.0.jar"
+cp build/libs/tower-0.1.0.jar "k:/youxi/.minecraft/versions/1.20.1-Forge_47.4.23/mods/tower-0.1.0.jar"
 ```
 
 - **改 mod 代码后必须重启游戏才能生效**（Forge 不热加载）；改 tools/brain 的 Python 代码无需重启
@@ -51,7 +51,7 @@ cd tools/ai_client_example && python wait_in_world.py   # 收到 player_ready �
 
 | 现象 | 根因/检查 |
 |---|---|
-| 游戏日志 | `D:/整合包/.minecraft/versions/1.20.1-NeoForge_47.1.106/logs/latest.log`（grep `Tower:\|Keyboard:`） |
+| 游戏日志 | `k:/youxi/.minecraft/versions/1.20.1-Forge_47.4.23/logs/latest.log`（grep `Tower:\|Keyboard:`） |
 | 测试脚本无限卡死 | 事件接收必须用**迭代式总超时**（`tower_client.py` 的 recv 已修）；不要用递归 recv（事件流会重置超时） |
 | move_to 立即"到达" | `PathFinder.findPath` 第 5 参数 depth=**曼哈顿到达半径**（传 1，勿传大值） |
 | 截图连拍只存 1 张 | 时间戳精度到秒会重名——文件名带自增序号 |

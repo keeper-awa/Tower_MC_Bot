@@ -11,16 +11,17 @@ import time
 from pathlib import Path
 
 from websockets.sync.client import connect
+from _game_dir import default_game_dir
 
 
 def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="等待进世界")
-    parser.add_argument("--game-dir", default=r"D:\整合包\.minecraft\versions\1.20.1-NeoForge_47.1.106")
+    parser.add_argument("--game-dir", default=None, help="游戏目录（缺省读 brain/config.yaml 绝对路径）")
     parser.add_argument("--timeout", type=int, default=300)
     args = parser.parse_args()
-    cfg = Path(args.game_dir) / "config" / "tower.json"
+    cfg = (Path(args.game_dir) if args.game_dir else default_game_dir()) / "config" / "tower.json"
     token = json.loads(cfg.read_text(encoding="utf-8"))["token"]
 
     deadline = time.time() + args.timeout
