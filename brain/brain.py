@@ -138,6 +138,10 @@ class FakeLLM:
                                                                "arguments": json.dumps(tool_args, ensure_ascii=False)}}]},
                 "usage": {}}
 
+    def look(self, image_path, prompt=""):
+        """dry-run 视觉：不真调 vision 模型，返回固定画面描述。"""
+        return "（dry-run）画面描述：一片森林，几棵橡树，远处有座山。"
+
     def chat(self, messages, tools=None, vision=False):
         self.step += 1
         if self.scenario == "outline":
@@ -293,7 +297,8 @@ class Brain:
             self.client = self._connect()
             self.tools = Toolset(self.client, self.cfg["brain"], self.memory)
             self.executor = PlanExecutor(self.client, self.tools, self.skills,
-                                         self.cfg["brain"], patrol_cb=self._safety_patrol)
+                                         self.cfg["brain"], patrol_cb=self._safety_patrol,
+                                         llm=self.llm)
             if self.ui is not None:
                 self.ui["status"] = {
                     "conn": "已连接",
@@ -371,6 +376,18 @@ class Brain:
                 self._accept_outline(call["arguments"])
             elif call["name"] == "plan":
                 self._accept_plan(call["arguments"], player_text=text)
+            elif call["name"] in self.skills.names():
+                # M5.3 兜底：LLM 偶尔直接把技能名当顶层工具调用（如 look）——
+                # 不拦，直接执行该技能并汇报（复用 executor 已注入 llm 的上下文）
+                log.info("LLM 直接调用技能 %s，自动执行", call["name"])
+                try:
+                    result = self.skills.run(call["name"], self.executor._ctx,
+                                             call.get("arguments") or {})
+                except Exception as e:
+                    log.error("技能 %s 执行异常: %s", call["name"], e)
+                    result = f"执行技能 {call['name']} 失败：{e}"
+                self._say(result)
+                return
             else:
                 log.warning("LLM 调用了未知工具 %s，忽略", call["name"])
                 return

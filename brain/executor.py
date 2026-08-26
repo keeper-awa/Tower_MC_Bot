@@ -155,10 +155,11 @@ def validate_plan(raw, skill_names, tool_names, max_steps=8):
 class PlanExecutor:
     """步骤状态机执行器：pending → running → done/failed/interrupted。"""
 
-    def __init__(self, client, tools, skills, cfg, patrol_cb=None):
+    def __init__(self, client, tools, skills, cfg, patrol_cb=None, llm=None):
         self.client = client
         self.tools = tools
         self.skills = skills
+        self.llm = llm  # M5.3 视觉管线：传给技能上下文
         self.patrol_cb = patrol_cb          # 纯代码安全巡检回调，返回警告列表
         self.wait_timeout = cfg.get("default_wait_timeout", 60)
         self.check_interval = cfg.get("safety_check_interval", 5)
@@ -167,7 +168,7 @@ class PlanExecutor:
         self.step_i = 0
         self.results = []                   # [(step, result_text)]
         self.pending_chat = []              # 执行期间缓存的玩家消息
-        self._ctx = SkillContext(client, tools, executor=self, skills=skills)
+        self._ctx = SkillContext(client, tools, executor=self, skills=skills, llm=llm)
         self._last_check = 0.0
         self._last_patrol = 0.0
         self._conn_fails = 0

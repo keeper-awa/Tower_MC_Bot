@@ -8,11 +8,12 @@ api:
   vision_model: "deepseek-v4-flash-vision-exp"  # 看截图时切换（D2 决策，M5.3 视觉管线用）
   temperature: 0.7
   max_tokens: 1536                 # 输出上限（留余量防截断）
+  vision_max_tokens: 4096          # 视觉模型单独上限（推理型：先 reasoning 再 content，防 content 被截空）
 
 connection:
   host: "127.0.0.1"
   port: 24778
-  game_dir: "D:\\整合包\\.minecraft\\versions\\1.20.1-NeoForge_47.1.106"   # 读取 config/tower.json 的 token（决策 A）
+  game_dir: "k:\\youxi\\.minecraft\\versions\\1.20.1-Forge_47.4.23"   # 读取 config/tower.json 的 token（决策 A）
 
 brain:
   # M5.2 起无自主周期：LLM 只排工作流 + 聊天；以下为执行器/巡检参数

@@ -25,11 +25,12 @@ class Skill:
 class SkillContext:
     """技能运行上下文（由 PlanExecutor 构建并注入）。"""
 
-    def __init__(self, client, tools, executor=None, skills=None):
+    def __init__(self, client, tools, executor=None, skills=None, llm=None):
         self.client = client
         self.tools = tools
         self.executor = executor
         self.skills = skills
+        self.llm = llm  # M5.3 视觉管线：look 技能用 vision 模型看图
 
     def ok(self, action, params=None):
         """调用 Tower 动作，失败抛异常（同 TowerClient.ok）。"""
