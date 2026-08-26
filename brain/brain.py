@@ -190,6 +190,20 @@ class Brain:
         self.cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
         self.dry_run = dry_run
         self.scenario = scenario
+        # 启动前置校验：connection.game_dir 未配置/找不到 tower.json 时明确报错退出，
+        # 避免主循环反复捕获 FileNotFoundError 刷"循环异常"（用户困惑且刷屏）
+        game_dir = str((self.cfg.get("connection") or {}).get("game_dir", "") or "").strip()
+        if not game_dir:
+            raise RuntimeError(
+                "config.yaml 未配置 connection.game_dir：请填写游戏目录"
+                "（如 .minecraft/versions/1.20.1-Forge_47.4.23，用于读取 config/tower.json 的 token）"
+            )
+        token_path = Path(game_dir) / "config" / "tower.json"
+        if not token_path.exists():
+            raise RuntimeError(
+                f"connection.game_dir 下找不到 {token_path}："
+                "请确认游戏目录填写正确，且该版本已运行 Tower mod 生成 config/tower.json"
+            )
         brain_cfg = self.cfg["brain"]
         self.plan_retries = brain_cfg.get("plan_retries", 1)
         self.plan_max_steps = brain_cfg.get("plan_max_steps", 8)

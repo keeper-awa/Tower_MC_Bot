@@ -45,6 +45,7 @@
 - ✅ **技能库加载**：6 个（craft_items / cross_water / look / make_crafting_table / mine_wood / wait）
 - ✅ **路径解析**：`_game_dir.default_game_dir()` 返回绝对路径（`is_absolute()=True`）
 - ✅ **语法**：全部改动 Python 文件 `py_compile` 通过
+- ✅ **启动校验**：`game_dir` 未配置 / 找不到 `tower.json` 时启动即明确报错退出（不再无限刷「循环异常」）
 
 ## 涉及文件
 
