@@ -13,7 +13,8 @@ api:
 connection:
   host: "127.0.0.1"
   port: 24778
-  game_dir: "k:\\youxi\\.minecraft\\versions\\1.20.1-Forge_47.4.23"   # 读取 config/tower.json 的 token（决策 A）
+  # 机器特定路径（勿提交本机具体值）：指向 .minecraft/versions/<版本>/，用于读 config/tower.json 的 token（决策 A）
+  game_dir: ""
 
 brain:
   # M5.2 起无自主周期：LLM 只排工作流 + 聊天；以下为执行器/巡检参数
