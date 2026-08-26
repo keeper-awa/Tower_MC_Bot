@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 from tower_client import TowerClient, connect_until_ready
+from _game_dir import default_game_dir
 
 
 def main() -> int:
@@ -19,11 +20,11 @@ def main() -> int:
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Tower M2 感知层测试")
     parser.add_argument("token", nargs="?", default=None, help="连接 token（缺省读 config/tower.json）")
-    parser.add_argument("--game-dir", default=r"D:\整合包\.minecraft\versions\1.20.1-NeoForge_47.1.106")
+    parser.add_argument("--game-dir", default=None, help="游戏目录（缺省读 brain/config.yaml 绝对路径）")
     args = parser.parse_args()
     token = args.token
     if not token:
-        cfg = Path(args.game_dir) / "config" / "tower.json"
+        cfg = (Path(args.game_dir) if args.game_dir else default_game_dir()) / "config" / "tower.json"
         token = json.loads(cfg.read_text(encoding="utf-8"))["token"]
     ok = True
 

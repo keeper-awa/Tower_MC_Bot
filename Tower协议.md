@@ -206,7 +206,7 @@
 ```
 
 - 走原版 `Screenshot` 类截取当前画面，保存 PNG 到游戏 `screenshots` 目录（文件名为原版格式 `<世界名>_<时间戳>.png`），**不直接走 WS**（图片远超 64KB）。
-- 响应：`{"path":"D:\\整合包\\.minecraft\\screenshots\\world_2026-08-24_14.30.05.png","width":1920,"height":1080}`
+- 响应：`{"path":"k:\\youxi\\.minecraft\\versions\\1.20.1-Forge_47.4.23\\screenshots\\tower\\world_2026-08-24_14.30.05.png","width":1920,"height":1080}`
 - 注：保存为异步完成，大脑读到路径后需带重试等待文件出现（一般 < 2s）；
 - 大脑侧自行用 Pillow 压缩（降分辨率 + JPEG）后再发送给视觉模型，本协议不涉及。
 

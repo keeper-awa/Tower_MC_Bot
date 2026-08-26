@@ -36,6 +36,9 @@ class LLM:
         self.vision_model = cfg.get("vision_model", "deepseek-v4-flash-vision-exp")
         self.temperature = cfg.get("temperature", 0.7)
         self.max_tokens = cfg.get("max_tokens", 2048)
+        # vision 是推理型模型：会先输出大量 reasoning 再输出 content，
+        # 单独给更大的上限防止 reasoning 占满后 content 为空（finish=length text_len=0）
+        self.vision_max_tokens = cfg.get("vision_max_tokens", 4096)
 
     def chat(self, messages: list, tools: list = None, vision: bool = False) -> dict:
         """一次对话补全。
@@ -47,7 +50,7 @@ class LLM:
             "model": self.vision_model if vision else self.model,
             "messages": messages,
             "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
+            "max_tokens": self.vision_max_tokens if vision else self.max_tokens,
         }
         if tools:
             kwargs["tools"] = tools
@@ -101,3 +104,15 @@ class LLM:
         img.convert("RGB").save(buf, format="JPEG", quality=80)
         b64 = base64.b64encode(buf.getvalue()).decode("ascii")
         return {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+
+    def look(self, image_path: str, prompt: str = "", max_px: int = 800) -> str:
+        """看图（M5.3 视觉管线）：读截图 → 压缩 → vision 模型描述场景。
+
+        返回模型描述文本；失败抛 LLMError。
+        """
+        user_content = [
+            {"type": "text", "text": prompt or "用中文简要描述当前画面：环境、可见的重要方块/生物/建筑。"},
+            self.vision_message(image_path, max_px),
+        ]
+        resp = self.chat([{"role": "user", "content": user_content}], vision=True)
+        return resp["text"].strip() or "（模型无文本回复）"

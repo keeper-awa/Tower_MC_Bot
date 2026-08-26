@@ -21,6 +21,7 @@ from pathlib import Path
 from websockets.sync.client import connect
 
 from tower_client import TowerClient
+from _game_dir import default_game_dir
 
 
 def recv_response(ws, timeout=10):
@@ -36,9 +37,9 @@ def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Tower M1.3 断线归零测试")
-    parser.add_argument("--game-dir", default=r"D:\整合包\.minecraft\versions\1.20.1-NeoForge_47.1.106")
+    parser.add_argument("--game-dir", default=None, help="游戏目录（缺省读 brain/config.yaml 绝对路径）")
     args = parser.parse_args()
-    cfg = Path(args.game_dir) / "config"
+    cfg = (Path(args.game_dir) if args.game_dir else default_game_dir()) / "config"
     tower_cfg = json.loads((cfg / "tower.json").read_text(encoding="utf-8"))
     keyboard_cfg = json.loads((cfg / "keyboard.json").read_text(encoding="utf-8"))
     ok = True

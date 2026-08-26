@@ -206,6 +206,10 @@ class Toolset:
     # ── 聊天 ─────────────────────────────────────────────────────
     def do_chat(self, args):
         msg = sanitize_chat(str(args.get("message", "")))
+        # MC 聊天消息硬限制 ≤256 字符（《前置mod协议》chat 动作）；超长会被 Keyboard 丢弃
+        if len(msg) > 256:
+            log.info("聊天消息超长 %d 字符，截断到 256", len(msg))
+            msg = msg[:256]
         if msg:
             self.sent_chats.append((msg, time.time()))
             if len(self.sent_chats) > 20:

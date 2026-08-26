@@ -16,6 +16,7 @@ from pathlib import Path
 
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 from websockets.sync.client import connect
+from _game_dir import default_game_dir
 
 
 def default_token(game_dir: Path) -> str:
@@ -32,12 +33,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Tower M1.2 冒烟测试")
     parser.add_argument("token", nargs="?", default=None, help="连接 token（缺省自动从游戏 config 读取）")
     parser.add_argument("--port", type=int, default=24778)
-    parser.add_argument("--game-dir", default=r"D:\整合包\.minecraft\versions\1.20.1-NeoForge_47.1.106",
-                        help="游戏目录（读取 config/tower.json）")
+    parser.add_argument("--game-dir", default=None,
+                        help="游戏目录（缺省读 brain/config.yaml 绝对路径）")
     parser.add_argument("--test-idle", action="store_true",
                         help="追加 60s 空闲断开用例（需等待 ~70s）")
     args = parser.parse_args()
-    token = args.token or default_token(Path(args.game_dir))
+    token = args.token or default_token(Path(args.game_dir) if args.game_dir else default_game_dir())
     uri = f"ws://127.0.0.1:{args.port}/?token={token}"
     print(f"==> 连接 {uri}")
     ok = True

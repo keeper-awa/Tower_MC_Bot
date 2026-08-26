@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 from websockets.sync.client import connect
+from _game_dir import default_game_dir
 
 
 class TowerClient:
@@ -115,11 +116,11 @@ def demo() -> int:
     parser = argparse.ArgumentParser(description="Tower 示例客户端（M1.2 演示）")
     parser.add_argument("--token", default=None, help="连接 token（缺省读游戏 config/tower.json）")
     parser.add_argument("--port", type=int, default=24778)
-    parser.add_argument("--game-dir", default=r"D:\整合包\.minecraft\versions\1.20.1-NeoForge_47.1.106")
+    parser.add_argument("--game-dir", default=None, help="游戏目录（缺省读 brain/config.yaml 绝对路径）")
     args = parser.parse_args()
     token = args.token
     if not token:
-        cfg = Path(args.game_dir) / "config" / "tower.json"
+        cfg = (Path(args.game_dir) if args.game_dir else default_game_dir()) / "config" / "tower.json"
         if cfg.exists():
             token = json.loads(cfg.read_text(encoding="utf-8"))["token"]
         else:
