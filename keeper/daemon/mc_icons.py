@@ -54,62 +54,46 @@ def _extract_textures(jar: Path, src_prefix: str, dest: Path) -> int:
     return count
 
 
-# ── HUD 图标（生命/饥饿）：从 gui/icons.png 裁剪满/半/空 → mc-icons/ ──
-# 1.20.1 icons.png 第一行 (y=0) 布局：红心 x=54/63/72，鸡腿 x=108/117/126
-_HUD_CROPS = {
-    "heart.png": (54, 0, 63, 9),
-    "heart_half.png": (63, 0, 72, 9),
-    "heart_empty.png": (72, 0, 81, 9),
-    "food.png": (108, 0, 117, 9),
-    "food_half.png": (117, 0, 126, 9),
-    "food_empty.png": (126, 0, 135, 9),
-}
+def _ensure_hud_icons() -> int:
+    """把随项目提交的 HUD 图标（keeper/daemon/hud-icons/）复制到 mc-icons/。
 
-
-def _gen_hud_icons(jar: Path) -> int:
-    """从 gui/icons.png 裁剪心形/鸡腿（满/半/空）图标，返回生成数量。"""
-    try:
-        from PIL import Image
-    except Exception:  # noqa: BLE001
-        log.warning("Pillow 不可用，跳过 HUD 图标")
-        return 0
+    心形/鸡腿图标从游戏 jar 裁剪坐标易错（1.20.1 布局特殊），改由手工裁剪提交，
+    这里只负责在运行时确保存在。返回复制数量。
+    """
     ICONS_DIR.mkdir(parents=True, exist_ok=True)
+    src_dir = Path(__file__).resolve().parent / "hud-icons"
+    if not src_dir.is_dir():
+        return 0
     count = 0
-    try:
-        with zipfile.ZipFile(jar) as z:
-            data = z.read("assets/minecraft/textures/gui/icons.png")
-    except Exception as exc:  # noqa: BLE001
-        log.warning("读取 gui/icons.png 失败: %s", exc)
-        return 0
-    import io
+    for src in sorted(src_dir.glob("*.png")):
+        target = ICONS_DIR / src.name
+        try:
+            if not target.exists() or target.stat().st_mtime != src.stat().st_mtime:
+                import shutil
 
-    try:
-        sheet = Image.open(io.BytesIO(data)).convert("RGBA")
-        for name, (l, t, r, b) in _HUD_CROPS.items():
-            target = ICONS_DIR / name
-            if target.exists():
-                continue
-            sheet.crop((l, t, r, b)).resize((16, 16), Image.NEAREST).save(target)
-            count += 1
-    except Exception as exc:  # noqa: BLE001
-        log.warning("生成 HUD 图标失败: %s", exc)
-        return 0
+                shutil.copy2(src, target)
+                count += 1
+        except OSError:
+            continue
     if count:
-        log.info("已生成 HUD 图标: %d 个", count)
+        log.info("已同步 HUD 图标: %d 个", count)
     return count
 
 
 def ensure_icons(game_dir: str | Path) -> dict[str, int]:
-    """提取物品/方块图标 + HUD 图标到 mc-icons/。返回各分类新增数量。
+    """提取物品/方块图标 + 同步 HUD 图标到 mc-icons/。返回各分类新增数量。
 
     幂等：已提取过则 count=0。找不到 jar 返回 {"item": 0, "block": 0, "hud": 0}。
     """
     jar = _find_jar(game_dir)
-    if jar is None:
+    item = block = 0
+    if jar is not None:
+        item = _extract_textures(jar, "assets/minecraft/textures/item/", ITEM_DIR)
+        block = _extract_textures(jar, "assets/minecraft/textures/block/", BLOCK_DIR)
+    else:
         log.warning("未找到 Minecraft 版本 jar（%s），物品图标不可用", game_dir)
-        return {"item": 0, "block": 0, "hud": 0}
-    item = _extract_textures(jar, "assets/minecraft/textures/item/", ITEM_DIR)
-    block = _extract_textures(jar, "assets/minecraft/textures/block/", BLOCK_DIR)
-    # HUD 图标（心形/鸡腿）由用户手动裁剪提供，不再自动生成，避免错误坐标覆盖
-    log.info("已提取 MC 图标: item=%d block=%d（来源 %s）", item, block, jar.name)
-    return {"item": item, "block": block, "hud": 0}
+    # HUD 图标（心形/鸡腿）：手工裁剪随项目提交，运行时确保存在
+    hud = _ensure_hud_icons()
+    log.info("已提取 MC 图标: item=%d block=%d hud=%d（来源 %s）", item, block, hud,
+             jar.name if jar else "（无 jar）")
+    return {"item": item, "block": block, "hud": hud}
