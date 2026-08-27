@@ -31,14 +31,64 @@ class LLM:
         # 延迟导入：dry-run 模式不依赖 openai SDK
         from openai import OpenAI
 
-        self.client = OpenAI(api_key=api_key, base_url=cfg.get("base_url", "https://api.deepseek.com/v1"))
+        self.api_key = api_key
+        self.base_url = cfg.get("base_url", "https://api.deepseek.com/v1")
+        self.client = OpenAI(api_key=api_key, base_url=self.base_url)
         self.model = cfg.get("model", "deepseek-v4-flash")
-        self.vision_model = cfg.get("vision_model", "deepseek-v4-flash-vision-exp")
+        # 视觉模型：默认跟随对话模型（vision_model 为空）；可独立配置（base_url/api_key/model）
+        self.vision_model = cfg.get("vision_model") or None
+        self.vision_base_url = None
+        self.vision_api_key = None
+        self.vision_client = None
         self.temperature = cfg.get("temperature", 0.7)
         self.max_tokens = cfg.get("max_tokens", 2048)
         # vision 是推理型模型：会先输出大量 reasoning 再输出 content，
         # 单独给更大的上限防止 reasoning 占满后 content 为空（finish=length text_len=0）
         self.vision_max_tokens = cfg.get("vision_max_tokens", 4096)
+
+    def update_config(self, base_url: str = None, api_key: str = None, model: str = None,
+                      temperature: float = None, max_tokens: int = None,
+                      vision_base_url: str = None, vision_api_key: str = None,
+                      vision_model: str = None, vision_max_tokens: int = None,
+                      clear_vision: bool = False) -> None:
+        """热切换 LLM 配置（Phase 4 模型管理：激活模型时由 TowerManager 调用）。
+
+        - 对话模型：base_url/api_key/model/temperature/max_tokens
+        - 视觉模型：vision_base_url/vision_api_key/vision_model；clear_vision=True 时清除独立视觉配置
+          （跟随对话模型，chat(vision=True) 时使用对话模型）
+        """
+        if base_url or api_key:
+            from openai import OpenAI
+
+            self.base_url = base_url or self.base_url
+            self.api_key = api_key or self.api_key
+            self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        if model:
+            self.model = model
+        if temperature is not None:
+            self.temperature = temperature
+        if max_tokens is not None:
+            self.max_tokens = max_tokens
+        # ── 视觉模型 ──
+        if clear_vision:
+            self.vision_model = None
+            self.vision_base_url = None
+            self.vision_api_key = None
+            self.vision_client = None
+        elif vision_model or vision_base_url or vision_api_key:
+            if vision_model:
+                self.vision_model = vision_model
+            if vision_base_url or vision_api_key:
+                self.vision_base_url = vision_base_url or self.vision_base_url or self.base_url
+                self.vision_api_key = vision_api_key or self.vision_api_key or self.api_key
+                from openai import OpenAI
+
+                self.vision_client = OpenAI(api_key=self.vision_api_key, base_url=self.vision_base_url)
+            elif self.vision_client is None:
+                # 未给独立 base_url 时复用对话 client（只是换模型名）
+                self.vision_client = self.client
+            if vision_max_tokens is not None:
+                self.vision_max_tokens = vision_max_tokens
 
     def chat(self, messages: list, tools: list = None, vision: bool = False) -> dict:
         """一次对话补全。
@@ -46,8 +96,11 @@ class LLM:
         返回：{"text": str, "tool_calls": [{"id", "name", "arguments"(dict)}, ...]}
         抛 LLMError：key 无效（401）、限流（429）、网络等。
         """
+        # 视觉请求：用独立视觉模型（若配置了独立 base_url 则用独立 client）
+        client = self.vision_client if (vision and self.vision_client) else self.client
+        model = (self.vision_model or self.model) if vision else self.model
         kwargs = {
-            "model": self.vision_model if vision else self.model,
+            "model": model,
             "messages": messages,
             "temperature": self.temperature,
             "max_tokens": self.vision_max_tokens if vision else self.max_tokens,
@@ -56,12 +109,12 @@ class LLM:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
         try:
-            resp = self.client.chat.completions.create(**kwargs)
+            resp = client.chat.completions.create(**kwargs)
         except Exception as e:
             # 简单重试一次（网络抖动/限流）
             time.sleep(1.5)
             try:
-                resp = self.client.chat.completions.create(**kwargs)
+                resp = client.chat.completions.create(**kwargs)
             except Exception as e2:
                 raise LLMError(f"LLM 调用失败: {e2}") from e2
 
