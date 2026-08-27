@@ -80,3 +80,19 @@
 - 大改造，按 Phase 逐阶段验收后再进下一步
 - 暂停/恢复：Keeper AgentLoop 可暂停（asyncio.Event），Tower Brain 是阻塞主循环——暂停=停 plan + 断点恢复（outline 已有断点机制）
 - 模型管理 settings.json 与 config.yaml 双轨维护，需统一（settings.json 为唯一 LLM 配置源，config.yaml 只留 vision/路径）
+
+## 7. 实施状态（2026-08-27 更新）
+
+| Phase | 内容 | 状态 |
+|---|---|---|
+| Phase 1 移植框架跑通 | daemon 启动 → Brain 连 Tower → webui 显示连接状态 | ✅ 完成 |
+| Phase 2 数据桥接 | status/player/plan 状态映射给前端 | ✅ 完成 |
+| Phase 3 webui 语义适配 | 维度中文、状态实时化、工作流面板、MC 图标 | ✅ 完成 |
+| Phase 4 模型管理 / 打包 | 模型双角色热切换完成；exe 打包 ⏳ 待交付 |
+
+实施要点（本次落地）：
+- **模型管理**：settings.json 增加 `vision_model_id`（视觉角色，空=跟随对话）；brain/llm.py 支持独立视觉模型（独立 base_url/api_key/model + vision_client + clear_vision）；移除测试/预设
+- **配置容错**：game_dir 缺失时 `_ensure_brain` 捕获 RuntimeError 记 `_brain_error`，`/api/status` 返回降级态 + `config_error`，webui 显示「⚠ 配置未完成」横幅——clone 后首次使用不崩溃
+- **工作流面板**：`_workflow_state()` 从 executor.plan/outline 提取步骤（`{id(k): v}` 匹配结果，修掉 dict 作 key 的 500）
+- **MC 图标**：`mc_icons.py` 从 jar 提取 item/block 图标；HUD 图标手工裁剪随仓库提交（`hud-icons/`）运行时同步
+- 提交：rebase 后 force push immaomao（`e0030e4`），与 origin/main 只差 2 个提交；PR 待建
