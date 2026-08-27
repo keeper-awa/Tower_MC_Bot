@@ -220,6 +220,7 @@ class Brain:
         self.outline = None             # 活动任务大纲（OutlineManager，执行中）
         self._replan_count = 0          # 当前任务的失败重规划次数（有界防循环）
         self._resume_tried = False
+        self._manual_disconnect = False  # UI 手动断开：阻止心跳自动重连，直到 reconnect()
         self.last_safety = 0.0
         self._last_ping = 0.0
         self._last_ui_state = 0.0
@@ -307,6 +308,8 @@ class Brain:
             time.sleep(3 + random.random() * 2)
 
     def _ensure_connected(self):
+        if self._manual_disconnect:
+            return  # 手动断开：不自动重连（UI 断开后保持断开）
         if self.client is None:
             self.client = self._connect()
             self.tools = Toolset(self.client, self.cfg["brain"], self.memory)
@@ -319,6 +322,29 @@ class Brain:
                     "model": self.cfg["api"].get("model", "?"),
                     "llm": self._llm_stat_text(),
                 }
+
+    # ── 手动连接 / 断开（UI 控制）──────────────────────────────
+    def disconnect(self):
+        """手动断开：关闭连接并阻止自动重连，直到 reconnect()。"""
+        self._manual_disconnect = True
+        if self.client is not None:
+            try:
+                self.client.close()
+            except Exception:
+                pass
+            self.client = None
+        self.tools = None
+        self.executor = None
+        self.plan = None
+        self.outline = None
+        if self.ui is not None:
+            self.ui["status"] = {"conn": "已断开", "llm": self._llm_stat_text()}
+            self.ui["player"] = None
+            self.ui["plan"] = None
+
+    def reconnect(self):
+        """重新连接（UI 连接按钮）：清手动断开标志，主循环自动重建。"""
+        self._manual_disconnect = False
 
     # ── 主循环 ────────────────────────────────────────────────────
     def run(self):
@@ -344,6 +370,8 @@ class Brain:
             time.sleep(0.2)
 
     def _tick(self):
+        if self.client is None:
+            return  # 未连接（手动断开/连接中断）：跳过事件处理，避免"循环异常"刷屏
         # 心跳探测：主循环不碰 socket（只读事件缓存），连接死在后台线程无人知晓
         # —— 周期性 ping 探测，失败立即重建（websockets keepalive 报错不会到主线程）
         now = time.time()
@@ -673,7 +701,10 @@ class Brain:
         try:
             state = self.client.ok("get_state")
             self.ui["player"] = {
+                "name": state.get("player", {}).get("name", ""),
                 "position": state.get("player", {}).get("position", {}),
+                "rotation": state.get("player", {}).get("rotation", {}),
+                "dimension": state.get("player", {}).get("dimension", "?"),
                 "health": state.get("player", {}).get("health", "?"),
                 "food": state.get("player", {}).get("food", "?"),
                 "biome": state.get("world", {}).get("biome", "?"),

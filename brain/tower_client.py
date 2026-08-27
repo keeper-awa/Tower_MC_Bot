@@ -17,6 +17,7 @@
 import argparse
 import json
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -27,6 +28,7 @@ class TowerClient:
     """同步 WebSocket 客户端（《Tower协议.md》v1）。"""
 
     def __init__(self, token, host="127.0.0.1", port=24778):
+        self._recv_lock = threading.Lock()  # 同步 websocket 不支持并发 recv（Brain 线程 + API 线程）
         self.ws = connect(f"ws://{host}:{port}/?token={token}")
         self._id = 0
         self._events = []
@@ -51,14 +53,15 @@ class TowerClient:
         注意：总超时 = timeout 秒（迭代式实现，避免事件流不断时
         递归 recv 每次重置超时导致永不返回）。
         """
-        deadline = time.time() + timeout
-        while True:
-            remaining = max(0.1, deadline - time.time())
-            msg = json.loads(self.ws.recv(timeout=remaining))
-            if msg.get("type") == "event":
-                self._events.append(msg)
-                continue
-            return msg
+        with self._recv_lock:
+            deadline = time.time() + timeout
+            while True:
+                remaining = max(0.1, deadline - time.time())
+                msg = json.loads(self.ws.recv(timeout=remaining))
+                if msg.get("type") == "event":
+                    self._events.append(msg)
+                    continue
+                return msg
 
     def req(self, action, params=None):
         """发送动作请求并等待匹配 id 的响应；在途事件缓存到队列。"""

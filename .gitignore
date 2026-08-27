@@ -34,3 +34,13 @@ api_key.json
 
 # 打包产物
 brain/dist/
+
+# keeper 移植（KeeperMC 前端）：node_modules / 缓存不提交
+keeper/**/__pycache__/
+keeper/webui/node_modules/
+
+# MC 物品/方块图标：运行时从游戏 jar 提取生成（提交会引入 1500+ 二进制）
+keeper/mc-icons/
+
+# 运行时生成（不提交）
+settings.json

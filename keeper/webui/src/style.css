@@ -1,0 +1,157 @@
+/* ============================================================
+   Tower 控制台 · LingChat 风格主题
+   玻璃拟态：白色半透明 + 高模糊 + 增色饱和；按钮透明玻璃 + 品牌青
+   ============================================================ */
+:root {
+  color-scheme: dark;
+  --bg: #0a0f18;
+  --bg-grad: radial-gradient(1100px 560px at 15% -10%, rgba(63, 160, 255, 0.16), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(90, 200, 255, 0.1), transparent 55%),
+    linear-gradient(180deg, #0b1120, #080c14);
+  /* 白色玻璃面板（参照 LingChat .glass-effect） */
+  --panel: rgba(255, 255, 255, 0.09);
+  --panel-solid: rgba(16, 22, 34, 0.9);
+  --border: rgba(255, 255, 255, 0.16);
+  --border-soft: rgba(255, 255, 255, 0.09);
+  --text: #f2f7ff;
+  --muted: rgba(255, 255, 255, 0.55);
+  /* 品牌亮青（LingChat --accent-color: #79d9ff） */
+  --accent: #79d9ff;
+  --accent2: #5fb7ff;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --err: #f87171;
+  --radius: 12px;
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app { height: 100%; margin: 0; }
+
+body {
+  background: var(--bg-grad), var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- 按钮（LingChat 透明玻璃式） ---------- */
+button {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  padding: 6px 13px;
+  cursor: pointer;
+  font-size: 13px;
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    transform 0.15s ease, box-shadow 0.15s ease;
+}
+button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.26);
+  transform: translateY(-1px);
+}
+button:active:not(:disabled) { transform: translateY(0); }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 主按钮：半透明品牌青（LingChat bg-brand/20 通透感，可见背景） */
+button.primary {
+  background: rgba(122, 217, 255, 0.2);
+  border-color: rgba(122, 217, 255, 0.45);
+  color: #eafcff;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(6, 48, 63, 0.4);
+}
+button.primary:hover:not(:disabled) {
+  background: rgba(122, 217, 255, 0.32);
+  color: #fff;
+  border-color: rgba(122, 217, 255, 0.6);
+  box-shadow: 0 4px 18px rgba(122, 217, 255, 0.3);
+}
+
+/* 危险按钮：半透明红（LingChat 式） */
+button.danger {
+  background: rgba(248, 113, 113, 0.14);
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fca5a5;
+}
+button.danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.26);
+  color: #fff;
+  border-color: rgba(248, 113, 113, 0.5);
+}
+
+/* ---------- 输入（玻璃输入框） ---------- */
+input[type="text"], input[type="password"], input[type="number"], textarea, select {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  padding: 7px 11px;
+  font-size: 13px;
+  width: 100%;
+  backdrop-filter: blur(12px) saturate(160%);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+input::placeholder, textarea::placeholder { color: rgba(255, 255, 255, 0.28); }
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(121, 217, 255, 0.18);
+}
+select option, select optgroup { background: #14202e; color: #fff; }
+
+/* ---------- 面板（LingChat 玻璃） ---------- */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), inset 0 1px 1px rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  position: relative;
+}
+.panel::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 14px; right: 14px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(121, 217, 255, 0.6), transparent);
+}
+
+h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+h3::before {
+  content: "";
+  width: 3px;
+  height: 13px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--accent), var(--accent2));
+  box-shadow: 0 0 8px rgba(121, 217, 255, 0.5);
+}
+
+.mono { font-family: Consolas, "Cascadia Code", "Courier New", monospace; }
+
+.muted { color: var(--muted); }
+
+/* ---------- 滚动条（LingChat 品牌色 thumb） ---------- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(121, 217, 255, 0.35); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(121, 217, 255, 0.55); }
