@@ -6,3 +6,4 @@ pydantic>=2.0
 python-dotenv>=1.0
 pywebview>=5.0
 httpx>=0.24  # keeper/daemon/manager.py（Keeper 旧文件，被 collect 收集时 import）
+python-multipart>=0.0.7  # fastapi UploadFile（壁纸上传）
