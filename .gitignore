@@ -37,6 +37,10 @@ brain/dist/
 /dist/
 pack/build/
 
+# minecraft-data 配方数据源（本地生成 kc.py 用，不提交）
+tools/items_1.20.json
+tools/recipes_1.20.json
+
 # keeper 移植（KeeperMC 前端）：node_modules / 缓存不提交
 keeper/**/__pycache__/
 keeper/webui/node_modules/
