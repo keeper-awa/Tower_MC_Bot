@@ -5,3 +5,4 @@ uvicorn>=0.20
 pydantic>=2.0
 python-dotenv>=1.0
 pywebview>=5.0
+httpx>=0.24  # keeper/daemon/manager.py（Keeper 旧文件，被 collect 收集时 import）

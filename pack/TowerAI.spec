@@ -37,6 +37,8 @@ hiddenimports = (
     # pythonnet（winforms 后端）与平台模块显式收
     + ["clr", "pythonnet", "webview.platforms.winforms", "webview.platforms.edgechromium"]
     + collect_submodules("clr")
+    # httpx（keeper/daemon/manager.py 引入；httpx 子模块多为动态 import，需显式收全）
+    + collect_submodules("httpx")
 )
 
 a = Analysis(
