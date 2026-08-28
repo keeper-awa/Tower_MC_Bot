@@ -34,6 +34,8 @@ api_key.json
 
 # 打包产物
 brain/dist/
+/dist/
+pack/build/
 
 # keeper 移植（KeeperMC 前端）：node_modules / 缓存不提交
 keeper/**/__pycache__/

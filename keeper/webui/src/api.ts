@@ -48,6 +48,7 @@ export interface LogEntry {
 export interface Settings {
   log_enabled: boolean
   log_dir: string
+  game_dir: string
 }
 
 export interface ModelEntry {

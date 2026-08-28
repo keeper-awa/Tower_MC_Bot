@@ -2,6 +2,7 @@ package com.tower.control;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.tower.net.MessageCodec;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -33,6 +34,14 @@ public final class GetBlocksAction extends NativeAction {
             throws ActionException {
         int radius = optInt(params, "radius", 8, RADIUS_MIN, RADIUS_MAX);
         int max = optInt(params, "max", 512, MAX_MIN, MAX_MAX);
+        String filter = null;
+        var f = params.get("filter");
+        if (f != null && !f.isJsonNull()) {
+            if (!f.isJsonPrimitive() || !f.getAsJsonPrimitive().isString()) {
+                throw new ActionException(MessageCodec.ERR_INVALID_PARAM, "filter 必须是字符串");
+            }
+            filter = f.getAsString();
+        }
 
         Level level = player.level();
         BlockPos center = player.blockPosition();
@@ -41,9 +50,18 @@ public final class GetBlocksAction extends NativeAction {
             for (int dy = -radius; dy <= radius; dy++) {
                 for (int dz = -radius; dz <= radius; dz++) {
                     BlockPos pos = center.offset(dx, dy, dz);
-                    if (!level.getBlockState(pos).isAir()) {
-                        hits.add(pos);
+                    if (level.getBlockState(pos).isAir()) {
+                        continue;
                     }
+                    if (filter != null) {
+                        ResourceLocation id = level.registryAccess()
+                                .registryOrThrow(Registries.BLOCK)
+                                .getKey(level.getBlockState(pos).getBlock());
+                        if (id == null || !matchesFilter(id.toString(), filter)) {
+                            continue;
+                        }
+                    }
+                    hits.add(pos);
                 }
             }
         }
@@ -80,6 +98,17 @@ public final class GetBlocksAction extends NativeAction {
         int dy = p.getY() - center.getY();
         int dz = p.getZ() - center.getZ();
         return dx * dx + dy * dy + dz * dz;
+    }
+
+    /** filter 匹配：方块 id（如 minecraft:oak_log）包含任一 filter 段（| 分隔）。 */
+    private static boolean matchesFilter(String id, String filter) {
+        for (String part : filter.split("\\|")) {
+            String p = part.trim();
+            if (!p.isEmpty() && id.contains(p)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 视线方向 1 格（取水平方向主轴向的相邻方块）。 */

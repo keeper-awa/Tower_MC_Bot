@@ -10,12 +10,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import sys
 import threading
 import time
 from collections import deque
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +162,9 @@ class TowerManager:
 
     async def status(self) -> dict[str, Any]:
         self._ensure_brain()
+        # 模型管理里没有新建/激活模型 → 引导去模型管理（替代旧的「未配置 API key」提示）
+        no_model = self._no_active_model()
+        no_model_hint = "当前没有选择可用模型（请在模型管理中新建并激活）"
         # 配置缺失（game_dir 未填 / tower.json 不存在）：返回可读状态供前端引导
         if self._brain is None:
             return {
@@ -174,7 +180,7 @@ class TowerManager:
                 "agent_paused": False,
                 "goal": "",
                 "wf": {"kind": None, "title": "", "idx": 0, "total": 0, "steps": []},
-                "config_error": self._brain_error or "大脑未初始化",
+                "config_error": no_model_hint if no_model else (self._brain_error or "大脑未初始化"),
                 "decisions_count": 0,
                 "events_count": 0,
                 "launch_cmd": "",
@@ -215,7 +221,7 @@ class TowerManager:
             "agent_running": b.plan is not None,
             "agent_paused": False,
             "goal": ui.get("plan") or "",
-            "config_error": None,
+            "config_error": no_model_hint if no_model else None,
             # ── 工作流（GitHub Actions 风格流水线数据）──
             "wf": self._workflow_state(b),
             "decisions_count": 0,
@@ -283,6 +289,15 @@ class TowerManager:
             return bool(str(data.get("api_key", "")).strip())
         except Exception:  # noqa: BLE001
             return False
+
+    def _no_active_model(self) -> bool:
+        """settings.json 里是否有「已激活」的模型（模型管理里新建并激活）。"""
+        from .settings import load_settings
+
+        s = load_settings()
+        if not s.active_model_id:
+            return True
+        return not any(m.id == s.active_model_id for m in s.models)
 
     # ── 玩家状态（/api/state ← 实时 get_state，最小延迟）─────────
     async def state(self) -> dict[str, Any]:
@@ -399,6 +414,35 @@ class TowerManager:
         asyncio.ensure_future(self._broadcast({"type": "log", "data": entry}))
 
     # ── 设置 / 模型（Phase 4：settings.json 驱动 brain.llm 热切换）──
+    def _read_game_dir(self) -> str:
+        """读 brain/config.yaml 的 connection.game_dir（机器特定路径，勿提交）。"""
+        if not BRAIN_CONFIG.exists():
+            return ""
+        try:
+            cfg = yaml.safe_load(BRAIN_CONFIG.read_text(encoding="utf-8")) or {}
+            return str((cfg.get("connection") or {}).get("game_dir", "") or "")
+        except Exception:
+            return ""
+
+    def _write_game_dir(self, game_dir: str) -> None:
+        """写 brain/config.yaml 的 connection.game_dir（正则替换保留注释/其他字段）。"""
+        game_dir = str(game_dir).strip()
+        if not BRAIN_CONFIG.exists():
+            return
+        text = BRAIN_CONFIG.read_text(encoding="utf-8")
+        if re.search(r"^\s*game_dir:", text, re.MULTILINE):
+            text = re.sub(r"(^\s*game_dir:\s*).*$",
+                          lambda m: m.group(1) + json.dumps(game_dir),
+                          text, flags=re.MULTILINE)
+        else:
+            # connection: 块下无 game_dir → 在 connection 首行后插入
+            m = re.search(r"^(\s*connection:\s*)$", text, re.MULTILINE)
+            if m:
+                text = text[:m.end()] + f"\n  game_dir: {json.dumps(game_dir)}" + text[m.end():]
+            else:
+                text += f"\nconnection:\n  game_dir: {json.dumps(game_dir)}\n"
+        BRAIN_CONFIG.write_text(text, encoding="utf-8")
+
     def get_settings_public(self) -> dict[str, Any]:
         from .settings import load_settings
 
@@ -406,6 +450,7 @@ class TowerManager:
         return {
             "log_enabled": s.log_enabled,
             "log_dir": s.log_dir,
+            "game_dir": self._read_game_dir(),
             "token_configured": self._has_key(),
             "mod_port": 24778,
         }
@@ -419,34 +464,19 @@ class TowerManager:
         if "log_dir" in body:
             s.log_dir = str(body["log_dir"])
         save_settings(s)
+        if "game_dir" in body:
+            self._write_game_dir(str(body["game_dir"]))
         return self.get_settings_public()
-
-    def _fallback_model(self) -> dict[str, Any]:
-        """settings.json 无模型时，从当前大脑配置构造初始模型（兜底）。"""
-        api_cfg = (self._brain.cfg or {}).get("api", {}) if self._brain else {}
-        active = api_cfg.get("model", "deepseek-v4-flash")
-        return {
-            "id": "default",
-            "label": active,
-            "provider": "deepseek",
-            "model": active,
-            "api_key": "",
-            "base_url": api_cfg.get("base_url", ""),
-            "temperature": api_cfg.get("temperature"),
-            "top_p": None,
-            "enable_thinking": False,
-            "reasoning_effort": None,
-            "max_tokens": api_cfg.get("max_tokens", 2048),
-        }
 
     def models(self) -> dict[str, Any]:
         from .settings import load_settings, mask_api_key
 
         s = load_settings()
         if not s.models:
+            # 初始为空，让用户自己在模型管理里新建（不塞无意义的预设模型）
             return {
-                "models": [self._fallback_model()],
-                "active_model_id": "default",
+                "models": [],
+                "active_model_id": "",
                 "vision_model_id": "",
             }
         return {

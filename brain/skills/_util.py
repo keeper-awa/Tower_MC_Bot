@@ -63,3 +63,29 @@ def player_pos(state) -> dict:
     """玩家位置 {x, y, z}（整数化）。"""
     p = state.get("player", {}).get("position", {})
     return {"x": int(p.get("x", 0)), "y": int(p.get("y", 0)), "z": int(p.get("z", 0))}
+
+
+def find_blocks(ctx, filter_str=None, matcher=None, max_radius=16, y_lo=-6, y_hi=8):
+    """扫描目标方块：优先用 mod 端 filter（根治 max=512 被近处方块挤占）。
+
+    filter_str：方块 id 子串匹配（如 "log" / "ore" / "oak_log|spruce_log"），
+               mod 端 get_blocks 支持 filter 后返回的全是目标方块。
+    matcher：Python 侧 id 判定函数（filter 缺省/旧 jar 时用）。
+    y_lo/y_hi：相对玩家高度的 y 范围（放宽坡上/谷底，默认 -6 ~ +8）。
+    返回按 3D 距离排序的方块列表；扫描完没有则返回 None。
+    """
+    pos = player_pos(ctx.ok("get_state"))
+    for radius in (4, 6, 8, 10, max_radius):
+        params = {"radius": radius, "max": 512}
+        if filter_str:
+            params["filter"] = filter_str
+        blocks = ctx.ok("get_blocks", params)
+        hits = [b for b in blocks.get("blocks", [])
+                if (not matcher or matcher(b.get("id", "")))
+                and pos["y"] + y_lo <= b.get("y", pos["y"]) <= pos["y"] + y_hi]
+        if hits:
+            hits.sort(key=lambda b: (b["x"] - pos["x"]) ** 2
+                      + (b["y"] - pos["y"]) ** 2
+                      + (b["z"] - pos["z"]) ** 2)
+            return hits
+    return None

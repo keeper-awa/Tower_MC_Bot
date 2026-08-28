@@ -64,6 +64,13 @@ public final class GetEntitiesAction extends NativeAction {
             o.addProperty("x", e.getX());
             o.addProperty("y", e.getY());
             o.addProperty("z", e.getZ());
+            if (e instanceof ItemEntity itemEntity) {
+                // 掉落物：暴露物品注册 id（如 minecraft:oak_log）与显示名，供大脑按物品过滤拾取
+                var itemKey = itemEntity.getItem().getItemHolder()
+                        .unwrapKey().map(k -> k.location().toString()).orElse(null);
+                o.addProperty("item", itemKey == null ? "?" : itemKey);
+                o.addProperty("item_name", itemEntity.getItem().getHoverName().getString());
+            }
             if (e instanceof LivingEntity living) {
                 o.addProperty("health", living.getHealth());
             }

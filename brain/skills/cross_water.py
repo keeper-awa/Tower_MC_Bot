@@ -66,6 +66,7 @@ class CrossWaterSkill(Skill):
         finally:
             ctx.ok("swim", {"value": False})
             ctx.ok("move", {})
+            ctx.ok("look_at", {})  # 解除视角锁定
 
 
 skill = CrossWaterSkill()

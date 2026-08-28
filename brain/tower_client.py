@@ -52,26 +52,52 @@ class TowerClient:
 
         注意：总超时 = timeout 秒（迭代式实现，避免事件流不断时
         递归 recv 每次重置超时导致永不返回）。
+
+        容错：技能执行线程与心跳线程偶发并发 recv，websockets 抛
+        "cannot call recv"——捕获后短暂等待重试（另一个 recv 瞬时结束）。
         """
         with self._recv_lock:
             deadline = time.time() + timeout
+            retries = 0
             while True:
                 remaining = max(0.1, deadline - time.time())
-                msg = json.loads(self.ws.recv(timeout=remaining))
+                try:
+                    msg = json.loads(self.ws.recv(timeout=remaining))
+                    retries = 0
+                except Exception as e:
+                    if "cannot call recv" in str(e) and retries < 60:
+                        # 另一线程的 recv 正在占用 socket：让出一点时间再重试（限 60 次≈3s 防死循环）
+                        retries += 1
+                        time.sleep(0.05)
+                        continue
+                    raise
                 if msg.get("type") == "event":
                     self._events.append(msg)
                     continue
                 return msg
 
     def req(self, action, params=None):
-        """发送动作请求并等待匹配 id 的响应；在途事件缓存到队列。"""
+        """发送动作请求并等待匹配 id 的响应；在途事件缓存到队列。
+
+        recv 并发冲突（daemon API 线程与技能线程共享 client）时整体重发请求
+        （最多 3 次），避免动作失败中断技能。
+        """
         self._id += 1
-        self.send({"type": "request", "id": self._id, "action": action, "params": params or {}})
-        while True:
-            msg = self.recv()
-            if msg.get("id") == self._id:
-                return msg
-            # 其他消息（如 pong）忽略
+        req_id = self._id
+        for attempt in range(3):
+            self.send({"type": "request", "id": req_id, "action": action, "params": params or {}})
+            try:
+                while True:
+                    msg = self.recv()
+                    if msg.get("id") == req_id:
+                        return msg
+                    # 其他消息（如 pong）忽略
+            except Exception as e:
+                if "cannot call recv" in str(e) and attempt < 2:
+                    time.sleep(0.1)
+                    continue  # 重发请求（同一 req_id，响应仍匹配）
+                raise
+        raise RuntimeError(f"{action} 请求因 recv 并发冲突重试失败")
 
     def ok(self, action, params=None):
         """req 的便捷版：失败时抛异常，成功返回 result。"""

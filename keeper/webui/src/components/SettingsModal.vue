@@ -8,6 +8,7 @@ const emit = defineEmits<{ (e: 'close'): void; (e: 'changed'): void }>()
 const s = ref<Settings>({
   log_enabled: false,
   log_dir: 'logs',
+  game_dir: '',
 })
 const busy = ref(false)
 const msg = ref<{ type: 'ok' | 'err'; text: string } | null>(null)
@@ -112,6 +113,14 @@ async function doRemoveWallpaper() {
           <div class="actions">
             <button :disabled="busy" @click="doExport">导出当前日志</button>
           </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>游戏目录</legend>
+          <label>Minecraft 版本目录（.minecraft/versions/&lt;版本&gt;/，用于读取 mod token / 部署 jar）
+            <input v-model="s.game_dir" type="text" placeholder="如 i:\youxi\.minecraft\versions\1.20.1-Forge_47.4.23" />
+          </label>
+          <div class="hint">写入 brain/config.yaml 的 connection.game_dir。改后需重启游戏/大脑生效。</div>
         </fieldset>
 
         <fieldset>

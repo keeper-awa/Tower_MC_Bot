@@ -41,6 +41,7 @@ class ChatBody(BaseModel):
 class SettingsBody(BaseModel):
     log_enabled: bool = False
     log_dir: str = "logs"
+    game_dir: str = ""  # 游戏目录（写入 brain/config.yaml connection.game_dir）
 
 
 class ModelBody(BaseModel):

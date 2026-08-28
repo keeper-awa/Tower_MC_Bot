@@ -50,9 +50,23 @@ public final class NavController {
     /** path_progress 推送间隔（tick）。 */
     private static final int PROGRESS_INTERVAL = 20;
     /** 卡住检测窗口（tick）。 */
-    private static final int STUCK_WINDOW = 40;
+    private static final int STUCK_WINDOW = 25;
     /** 卡住位移阈值（格）。 */
     private static final double STUCK_THRESHOLD = 0.1;
+    /** 卡住后连续跳跃次数（越过 1 格障碍/台阶）。 */
+    private static final int STUCK_JUMP_TIMES = 3;
+    /** 连续跳跃间隔（tick）。 */
+    private static final int STUCK_JUMP_INTERVAL = 8;
+    /** 剩余待跳次数（>0 表示正在连续跳跃中）。 */
+    private static int stuckJumpsLeft = 0;
+    /** 距上次跳跃的 tick 计数。 */
+    private static int jumpCooldown = 0;
+    /** 主动台阶跳跃节流（tick）：检测到 1 格高台阶时主动跳，不靠卡住检测。 */
+    private static final int JUMP_STEP_INTERVAL = 10;
+    /** 距上次主动跳跃的 tick 计数。 */
+    private static int jumpStepCooldown = 0;
+    /** 触发节点高度预判跳跃的最大水平距离（格）。 */
+    private static final double JUMP_NODE_DIST = 2.5;
     /** 暂停后走远重算阈值（格）。 */
     private static final double PAUSE_OFF_PATH = 16.0;
     /** 路径点事件截断上限（协议 §5.3：路径点 > 128 截断）。 */
@@ -125,6 +139,9 @@ public final class NavController {
         NavController.stuckTries = 0;
         NavController.recomputeTries = 0;
         NavController.lastStuckPos = null;
+        NavController.stuckJumpsLeft = 0;
+        NavController.jumpCooldown = 0;
+        NavController.jumpStepCooldown = 0;
 
         // path_found 事件（auto 与 waypoints 均推送，协议 §5.3）
         sendEvent("path_found", pathEvent("auto".equals(mode) ? "auto" : "waypoints"));
@@ -232,16 +249,30 @@ public final class NavController {
         // 2. 自动开木门（前方 1 格或当前节点是关着的木门，带节流）
         tryOpenDoor(player, node);
 
-        // 3. 卡住检测（40 tick 窗口位移 < 0.1）
-        stuckTicks++;
-        if (stuckTicks >= STUCK_WINDOW) {
-            stuckTicks = 0;
-            Vec3 pos = player.position();
-            if (lastStuckPos != null && horizontalDist(pos, lastStuckPos) < STUCK_THRESHOLD) {
-                handleStuck(player);
-                return;
+        // 2.5 主动台阶跳跃（不依赖卡住检测）：路径要向上 / 前方 1 格高台阶 → 主动跳
+        tryJumpStep(player);
+
+        // 3. 卡住检测（STUCK_WINDOW tick 位移 < 0.1）
+        if (stuckJumpsLeft > 0) {
+            // 正在连续跳跃越障：按间隔继续跳，跳过期间不重复判卡住
+            jumpCooldown++;
+            if (jumpCooldown >= STUCK_JUMP_INTERVAL) {
+                jumpCooldown = 0;
+                stuckJumpsLeft--;
+                send("jump_once", new JsonObject());
+                LOGGER.debug("Tower: 连续跳跃越障（剩余 %d）", stuckJumpsLeft);
             }
-            lastStuckPos = pos;
+        } else {
+            stuckTicks++;
+            if (stuckTicks >= STUCK_WINDOW) {
+                stuckTicks = 0;
+                Vec3 pos = player.position();
+                if (lastStuckPos != null && horizontalDist(pos, lastStuckPos) < STUCK_THRESHOLD) {
+                    handleStuck(player);
+                    return;
+                }
+                lastStuckPos = pos;
+            }
         }
 
         // 4. path_progress（每 20 tick ≈1s）
@@ -250,13 +281,49 @@ public final class NavController {
         }
     }
 
+    /**
+     * 主动台阶跳跃：路径要求向上（下一节点更高）或前方 1 格高台阶时主动跳。
+     *
+     * 解决「高一格方块卡脚」：不再等卡住检测（25 tick 位移<0.1）才被动跳——
+     * 玩家贴边微动（位移≥0.1）时卡住检测永不触发，导致一直卡。这里主动预判并跳。
+     */
+    private static void tryJumpStep(LocalPlayer player) {
+        if (jumpStepCooldown > 0) {
+            jumpStepCooldown--;
+            return;
+        }
+        Level level = player.level();
+        BlockPos feet = player.blockPosition();
+        BlockPos next = waypoints.get(nodeIndex);
+
+        // ① 路径预判：下一节点比玩家脚高 ≥2 格（路径要向上走）且已接近（水平 < JUMP_NODE_DIST）
+        boolean needUp = next.getY() > feet.getY() + 1
+                && horizontalDist(player.position(), next) < JUMP_NODE_DIST;
+
+        // ② 前方台阶检测：行进方向 1 格是同层实心 + 其上方/再上方空气（1 格高可跳上）
+        Vec3 look = player.getLookAngle();
+        BlockPos ahead = feet.offset((int) Math.round(look.x), 0, (int) Math.round(look.z));
+        boolean stepAhead = !level.getBlockState(ahead).isAir()
+                && level.getBlockState(ahead.above()).isAir()
+                && level.getBlockState(ahead.above(2)).isAir();
+
+        if (needUp || stepAhead) {
+            send("jump_once", new JsonObject());
+            jumpStepCooldown = JUMP_STEP_INTERVAL;
+            LOGGER.debug("Tower: 主动跳跃越 1 格台阶（needUp={} stepAhead={}）@ ({},{},{})",
+                    needUp, stepAhead, ahead.getX(), ahead.getY(), ahead.getZ());
+        }
+    }
+
     private static void handleStuck(LocalPlayer player) {
         if (stuckTries == 0) {
-            // 第一次卡住：自动 jump_once（上 1 格台阶场景），重置窗口再观察
+            // 第一次卡住：连续跳跃越障（台阶/1 格障碍），重置窗口再观察
             stuckTries = 1;
             lastStuckPos = null;
+            stuckJumpsLeft = STUCK_JUMP_TIMES;
+            jumpCooldown = STUCK_JUMP_INTERVAL; // 立即先跳一下
             send("jump_once", new JsonObject());
-            LOGGER.debug("Tower: 导航疑似卡住，尝试跳跃");
+            LOGGER.debug("Tower: 导航疑似卡住，连续跳跃越障");
             return;
         }
         // 仍然卡住：path_stuck + 重算路径
@@ -383,6 +450,9 @@ public final class NavController {
         recomputeTries = 0;
         lastStuckPos = null;
         lastDoorPos = null;
+        stuckJumpsLeft = 0;
+        jumpCooldown = 0;
+        jumpStepCooldown = 0;
     }
 
     // ── 事件与转发请求构造 ────────────────────────────────────────

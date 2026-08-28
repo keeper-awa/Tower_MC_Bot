@@ -1,0 +1,123 @@
+name: 构建并发布 (mod + 大脑)
+
+# 触发：手动（workflow_dispatch）或打 tag（v*）
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag（如 v0.2.0，留空用 v<run_number>）"
+        required: false
+        default: ""
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  # ── 1. 构建 mod（NeoForge 1.20.1，Java 17）──────────────────
+  build-mod:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: 缓存 Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+      - name: 构建 mod
+        run: |
+          chmod +x gradlew
+          ./gradlew build -x test --console=plain
+      - name: 上传 mod 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: mod-jar
+          path: build/libs/*.jar
+          if-no-files-found: error
+
+  # ── 2. 构建大脑（Python + webui + PyInstaller onedir）───────
+  build-brain:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: keeper/webui/package-lock.json
+      - name: 安装 Python 依赖（大脑 + 打包）
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r brain/requirements.txt
+          pip install pywebview pyinstaller
+      - name: 构建 webui 前端
+        run: |
+          cd keeper/webui
+          npm ci
+          npm run build
+        shell: bash
+      - name: PyInstaller 打包大脑 exe（onedir）
+        run: |
+          pyinstaller pack/TowerAI.spec --clean --noconfirm
+        shell: bash
+      - name: 附带 skills 文件夹（exe 旁可扩展技能）
+        run: |
+          mkdir -p dist/TowerAI/skills
+          cp -r brain/skills/*.py dist/TowerAI/skills/
+        shell: bash
+      - name: 压缩大脑产物
+        run: |
+          powershell Compress-Archive -Path dist/TowerAI -DestinationPath dist/TowerAI-win64.zip -Force
+      - name: 上传大脑产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: brain-win64
+          path: dist/TowerAI-win64.zip
+          if-no-files-found: error
+
+  # ── 3. 发布 GitHub Release ─────────────────────────────────
+  release:
+    needs: [build-mod, build-brain]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 下载产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: 确定版本号
+        id: ver
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=v${{ github.run_number }}" >> $GITHUB_OUTPUT
+          fi
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Tower AI ${{ steps.ver.outputs.tag }}
+          body: |
+            ## Tower 大脑 + Mod 发布包
+            - **TowerAI-win64.zip**：大脑 exe（keeper daemon + brain + webui + pywebview，双击即开）
+            - **tower-*.jar**：Minecraft 1.20.1 NeoForge 客户端 mod（放入 mods/ 目录）
+            - 用法：mod 装进游戏 → 双击 TowerAI.exe → 设置游戏目录 → 自动连接
+          files: |
+            artifacts/tower-*.jar
+            artifacts/TowerAI-win64.zip
+          draft: true

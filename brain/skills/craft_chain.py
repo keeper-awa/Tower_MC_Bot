@@ -11,6 +11,7 @@
 """
 
 import logging
+import math
 from collections import defaultdict
 
 from . import kc
@@ -69,7 +70,8 @@ class CraftChainSkill(Skill):
     description = (
         "合成链：按目标物品递归追溯原材料并确定性合成（缺料自动收集/采集）。"
         "必传 target（Minecraft 物品 id，如 minecraft:stone_pickaxe / minecraft:chest / "
-        "minecraft:furnace / minecraft:iron_sword）；count=数量(缺省1)。"
+        "minecraft:furnace / minecraft:iron_sword）；count=额外制作的数量（增量，缺省1，"
+        "表示在现有基础上再多做几个，如已有 2 个传 count=3 会做到 5 个）。"
         "不可获取物品（命令方块/基岩/刷怪笼等）无法合成。"
     )
 
@@ -86,33 +88,41 @@ class CraftChainSkill(Skill):
                     f"可用物品举例：{self._available_preview()}")
 
         try:
-            want = max(1, int(args.get("count", 1)))
+            count = max(1, int(args.get("count", 1)))  # 增量：额外制作数量
         except (TypeError, ValueError):
             return "失败：count 参数必须是整数"
 
         state = ctx.ok("get_state")
         before = self._count_item(state, target)
 
+        # count 语义：额外制作数量（增量）——want 按增量展开材料（只做 count 个所需材料），
+        # goal_total=已有+count 仅顶层用于「已有足够就跳过」判断。
+        # （例：已有 7 个再做一个 → want=1，只需 4 木板/1 原木，而不是按 8 个算）
+        goal_total = before + count
+
         # ① 递归解析：生成生产计划（拓扑序：源 → 中间 → 成品）
-        plan = self._resolve(ctx, target, want)
+        plan = self._resolve(ctx, target, count, goal_total=goal_total)
         if plan is None:
             return f"失败：{target} 的依赖链无法解析（材料缺失或不可获取）"
 
         # ② 执行生产计划（确定性流水线）
         if not self._execute_plan(ctx, plan):
-            return f"失败：生产 {target} ×{want} 过程中某环节未完成"
+            return f"失败：生产 {target} ×{count} 过程中某环节未完成"
 
-        # ③ 验证
+        # ③ 验证（增量：须比开始时多出 count 个）
         after = self._count_item(ctx.ok("get_state"), target)
-        if after < before + want:
+        if after < before + count:
             return f"失败：{target} 数量未达标（{before} → {after}）"
-        return f"完成：合成 {target} ×{want}（背包 {before} → {after}）"
+        return f"完成：合成 {target} ×{count}（背包 {before} → {after}）"
 
     # ── 递归解析 ────────────────────────────────────────────────
-    def _resolve(self, ctx, target, want, _depth=0, _seen=None) -> list:
+    def _resolve(self, ctx, target, want, goal_total=None, _depth=0, _seen=None) -> list:
         """递归展开依赖树，返回生产计划（拓扑序步骤列表）。
 
         每步：{"kind": "acquire"/"craft", "item": 物品id, "count": 数量, "grid": "2x2"/"3x3"}
+        want = 还需生产的数量（增量）——材料按增量递归，避免按「目标总数」多算材料。
+        goal_total = 目标持有总数（仅顶层传入；None 表示材料层）——
+            用于「已有足够就跳过」判断：已有 ≥ goal_total 则无需生产。
         拓扑序：先源材料后成品（后序 DFS 逆序）。
         循环（如煤↔煤块互转）→ 该物品降级为「源获取」，不再展开其配方。
         """
@@ -133,7 +143,13 @@ class CraftChainSkill(Skill):
         steps = []
 
         # 已持有足够 → 不需要生产
-        if self._count_item(ctx.ok("get_state"), target) >= want:
+        # - 顶层（goal_total 有值）：按目标总数判断（已有 ≥ goal_total 则不生产）
+        # - 材料层（goal_total 为 None）：按需求数量 want 判断
+        have = self._count_item(ctx.ok("get_state"), target)
+        if goal_total is not None:
+            if have >= goal_total:
+                return steps
+        elif have >= want:
             return steps
 
         recipe = kc.recipe(target)
@@ -147,18 +163,21 @@ class CraftChainSkill(Skill):
             log.warning("%s 既无配方也非源，无法生产", target)
             return None
 
-        # 有配方：先递归材料
+        # 有配方：先递归材料（按增量 want 计算，不按目标总数）
+        yield_n = recipe.get("yield", 1)
         for mat, per_unit in recipe["materials"].items():
-            mat_need = per_unit * want
+            # 材料需求 = 每产出 1 个所需材料 × 增量 ÷ 每次产出数（向上取整）
+            # 例：木板 1 原木→4 块（yield=4），要 4 木板只需 1 原木（4/4）
+            mat_need = math.ceil(per_unit * want / yield_n)
             # 类别等价：材料若是「类别」（planks/wool/log），映射为具体物品再递归
             mat_item = self._category_to_item(ctx, mat)
-            mat_steps = self._resolve(ctx, mat_item, mat_need, _depth + 1, _seen)
+            mat_steps = self._resolve(ctx, mat_item, mat_need, None, _depth + 1, _seen)
             if mat_steps is None:
                 return None
             steps.extend(mat_steps)
-        # 再合成目标
-        steps.append({"kind": "craft", "item": target, "count": want,
-                      "grid": recipe.get("grid", "3x3"), "yield": recipe.get("yield", 1)})
+        # 再合成目标：count 用增量 want（决定合成次数/是否批量），goal 用目标总数（达标判断）
+        steps.append({"kind": "craft", "item": target, "count": want, "goal": goal_total,
+                      "grid": recipe.get("grid", "3x3"), "yield": yield_n})
         return steps
 
     def _category_to_item(self, ctx, cat: str) -> str:
@@ -205,48 +224,58 @@ class CraftChainSkill(Skill):
                     log.warning("采集 %s ×%d 失败", item, count)
                     return False
             else:
-                if not self._craft_one(ctx, item, count, step.get("grid", "3x3")):
+                if not self._craft_one(ctx, item, count, step.get("grid", "3x3"), step.get("goal")):
                     log.warning("合成 %s ×%d 失败", item, count)
                     return False
         return True
 
     def _acquire(self, ctx, item, count) -> bool:
-        """源获取：原木→砍树；矿→挖矿（mine_ore 待接入）。"""
+        """源获取：原木→mine 挖掘大类（what=wood）；矿→mine（what=ore，待接入）。"""
         name = item[len("minecraft:"):] if item.startswith("minecraft:") else item
         if name.endswith("_log") or name.endswith("_wood") or name.startswith("stripped_") \
                 or item in SOURCE_ACQUIRE and SOURCE_ACQUIRE.get(item) == "mine_wood":
-            # 原木：砍树（max_count 按需）
-            r = ctx.run_skill("mine_wood", {"max_count": count})
+            # 原木：调 mine 挖掘大类砍树（count 按需）
+            r = ctx.run_skill("mine", {"what": "wood", "count": count})
             return r.startswith("完成")
         if item in SOURCE_ACQUIRE and SOURCE_ACQUIRE[item] == "mine_ore":
-            # 挖矿（mine_ore 尚未实现）：报告待接入
-            log.warning("需要 %s：mine_ore 技能尚未接入，暂无法自动采集", item)
-            return False
+            # 挖矿：调 mine 挖掘大类（ore 支持待扩展；先如实报待接入）
+            r = ctx.run_skill("mine", {"what": "ore", "count": count})
+            return r.startswith("完成")
         # 其他源：暂不支持
         log.warning("源获取 %s 暂不支持", item)
         return False
 
-    def _craft_one(self, ctx, item, count, grid) -> bool:
-        """合成单个物品（可被计划多次调用）。2x2 背包 / 3x3 工作台。"""
-        goal = count
+    def _craft_one(self, ctx, item, count, grid, goal=None) -> bool:
+        """合成单个物品（可被计划多次调用）。2x2 背包 / 3x3 工作台。
+
+        count = 本次要做的数量（增量，决定合成次数）；goal = 达标总数（缺省=count）。
+        逐次普通合成（shift=False）精确 count 个，避免 shift 批量一次做超。
+        """
+        if goal is None:
+            goal = count
         if grid == "3x3":
-            return self._craft_with_table(ctx, item, goal)
+            return self._craft_with_table(ctx, item, count, goal)
         # 2x2 背包直接
         for _ in range(min(count, 64)):
-            if self._count_item(ctx.ok("get_state"), item) >= goal:
+            have = self._count_item(ctx.ok("get_state"), item)
+            if have >= goal:
                 return True
             try:
-                ctx.ok("craft", {"recipe": item, "shift": count > 1})
+                ctx.ok("craft", {"recipe": item, "shift": False})
             except Exception as e:
                 log.info("2x2 合成失败（%s），转工作台", e)
-                return self._craft_with_table(ctx, item, goal)
-            if poll(ctx, lambda st: self._count_item(st, item) >= goal,
+                return self._craft_with_table(ctx, item, count, goal)
+            if poll(ctx, lambda st: self._count_item(st, item) > have,
                     timeout=6.0, interval=0.6):
-                return True
+                continue
+            return False
         return self._count_item(ctx.ok("get_state"), item) >= goal
 
-    def _craft_with_table(self, ctx, item, goal) -> bool:
-        """确保工作台摆到身旁，再 3x3 合成。"""
+    def _craft_with_table(self, ctx, item, count, goal) -> bool:
+        """确保工作台摆到身旁，再 3x3 合成。
+
+        count = 本次要做的数量（增量）；goal = 达标总数。逐次普通合成精确控制。
+        """
         state = ctx.ok("get_state")
         if count_items(state, exact="minecraft:crafting_table") == 0:
             r = ctx.run_skill("make_crafting_table")
@@ -263,17 +292,19 @@ class CraftChainSkill(Skill):
             ctx.ok("hotbar", {"slot": 0})
         ground = self._place_spot(ctx, player_pos(ctx.ok("get_state")))
         ctx.ok("interact_block", ground)
-        for _ in range(min(goal, 64)):
-            if self._count_item(ctx.ok("get_state"), item) >= goal:
+        for _ in range(min(count, 64)):
+            have = self._count_item(ctx.ok("get_state"), item)
+            if have >= goal:
                 return True
             try:
-                ctx.ok("craft", {"recipe": item, "shift": True})
+                ctx.ok("craft", {"recipe": item, "shift": False})
             except Exception as e:
                 log.warning("工作台合成失败: %s", e)
                 return False
-            if poll(ctx, lambda st: self._count_item(st, item) >= goal,
+            if poll(ctx, lambda st: self._count_item(st, item) > have,
                     timeout=6.0, interval=0.6):
-                return True
+                continue
+            return False
         return self._count_item(ctx.ok("get_state"), item) >= goal
 
     # ── 辅助 ────────────────────────────────────────────────────

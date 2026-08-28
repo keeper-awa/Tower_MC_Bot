@@ -88,12 +88,15 @@ class SkillContext:
             _time.sleep(0.5)
         return None
 
-    def pickup_nearby(self, timeout=40.0) -> str:
+    def pickup_nearby(self, timeout=40.0, want_suffix=None, want_exact=None) -> str:
         """拾取引导：把附近掉落物逐个捡起（纯代码，不经 LLM）。
 
         挖掘后的掉落物可能散落/落水、物品会漂移——每轮重查 get_entities 找
         item 实体（category=item），move_to 靠近最近的一个直到进入拾取范围，
         循环直至捡完（连续 2 轮无新物品）或超时。中途玩家消息/危险照常中断。
+
+        want_suffix / want_exact：可选过滤，只捡匹配的物品（如砍树只捡原木），
+        避免把玩家之前丢地上的无关物品也捡起来。
         """
         import time as _time
         deadline = _time.time() + timeout
@@ -106,6 +109,16 @@ class SkillContext:
                 log.debug("拾取引导扫描失败: %s", e)
                 break
             items = [e for e in ents.get("entities", []) if e.get("category") == "item"]
+            if want_suffix or want_exact:
+                def _match(e):
+                    # 优先用 mod 端暴露的物品注册 id（如 minecraft:oak_log）；
+                    # 旧 jar 无该字段时回退 name（但掉落物 name 是实体名"Item"，匹配不到 → 需新 jar）
+                    iid = (e.get("item") or "").lower()
+                    nm = (e.get("name") or "").lower()
+                    if want_exact:
+                        return iid == want_exact or nm == want_exact
+                    return iid.endswith(want_suffix) or nm.endswith(want_suffix)
+                items = [e for e in items if _match(e)]
             if not items:
                 empty_rounds += 1
                 if empty_rounds >= 2:
@@ -187,3 +200,4 @@ class SkillContext:
         finally:
             self.ok("swim", {"value": False})
             self.ok("move", {})
+            self.ok("look_at", {})  # 解除视角锁定
