@@ -9,6 +9,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
@@ -43,8 +44,11 @@ public final class GetEntitiesAction extends NativeAction {
 
         Level level = player.level();
         AABB box = new AABB(player.blockPosition()).inflate(radius);
+        // 过滤：放行可拾取实体 + 掉落物（ItemEntity.isPickable() 返回 false，须单独放行——
+        // 否则 get_entities 永远看不到物品，技能拾取引导失效）
         List<Entity> found = level.getEntities(player, box,
-                e -> e.isPickable() && !e.isSpectator() && e.isAlive());
+                e -> (e.isPickable() || e instanceof ItemEntity)
+                        && !e.isSpectator() && e.isAlive());
         String filter = typeFilter;
         found = found.stream()
                 .filter(e -> filter == null || typeId(level, e).equals(filter))

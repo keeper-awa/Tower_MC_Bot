@@ -116,9 +116,11 @@ class SkillContext:
             pos = self.ok("get_state")["player"]["position"]
             items.sort(key=lambda e: (e["x"] - pos["x"]) ** 2 + (e["z"] - pos["z"]) ** 2)
             it = items[0]
-            # 已在拾取范围内（约 2 格）：等拾取生效即可
-            if (it["x"] - pos["x"]) ** 2 + (it["z"] - pos["z"]) ** 2 + (it["y"] - pos["y"]) ** 2 < 4.0:
-                _time.sleep(0.5)
+            # 已在拾取范围（约 1 格，MC 需玩家碰撞物品才拾取）：主动贴近而非干等——
+            # 距离² < 1.0 才可能被吸；1~4 之间 move_to 精确贴上去（干等 2 格边缘不会拾取）
+            d2 = (it["x"] - pos["x"]) ** 2 + (it["z"] - pos["z"]) ** 2 + (it["y"] - pos["y"]) ** 2
+            if d2 < 1.0:
+                _time.sleep(0.3)
                 continue
             if it["y"] < pos["y"] - 1.5:
                 # 物品在下方深处（多为落水物品）：游泳下潜靠近（move_to 走水不可靠）
@@ -133,14 +135,37 @@ class SkillContext:
                         self.ok("move", {})
                     except Exception:
                         pass
+            # 靠近物品：先 move_to 到物品旁的站立点（±1 格内），再 look_at + 直走贴上去
+            # —— move_to 到物品整数格可能停在方块边缘（precision 1.0 允 1 格误差），
+            #    达不到拾取碰撞距离；直走微调确保真正贴近物品。
             tx, ty, tz = int(it["x"]), int(it["y"]), int(it["z"])
-            self.ok("move_to", {"x": tx, "y": ty, "z": tz, "mode": "auto",
-                                "precision": 1.0, "allow_water": True})
-            name, _ = self.wait_event(("path_reached", "path_failed"), timeout=30, interruptible=True)
-            if name == "path_reached":
-                approached += 1
-            else:
-                _time.sleep(0.5)  # 该目标不可达，下一轮换下一个
+            try:
+                self.ok("move_to", {"x": tx, "y": ty, "z": tz, "mode": "auto",
+                                    "precision": 1.0, "allow_water": True})
+                self.wait_event(("path_reached", "path_failed"), timeout=30, interruptible=True)
+            except Exception as e:
+                log.debug("move_to 物品失败: %s", e)
+            # 直走贴上去（最多 3s）：锁定物品，持续前进直到进入拾取距离
+            self.ok("look_at", {"x": it["x"], "y": it["y"] + 0.3, "z": it["z"]})
+            self.ok("move", {"forward": 1})
+            try:
+                for _ in range(6):
+                    self.checkpoint()
+                    _time.sleep(0.5)
+                    p = self.ok("get_state")["player"]["position"]
+                    if (it["x"] - p["x"]) ** 2 + (it["z"] - p["z"]) ** 2 + (it["y"] - p["y"]) ** 2 < 1.0:
+                        break
+                    # 物品已被拾取/消失
+                    ents = self.ok("get_entities", {"radius": 8, "max": 64})
+                    if not any(e.get("id") == it.get("id") for e in ents.get("entities", [])):
+                        break
+            finally:
+                try:
+                    self.ok("move", {})
+                    self.ok("look_at", {})
+                except Exception:
+                    pass
+            approached += 1
         return f"拾取引导结束（靠近 {approached} 个目标点）"
 
     def _swim_to_item(self, item) -> None:
