@@ -1,0 +1,7 @@
+# Keeper daemon 运行依赖（管理面板 + 桌面壳）
+# 与 brain/requirements.txt 一起安装（大脑依赖见 brain/requirements.txt）
+fastapi>=0.100
+uvicorn>=0.20
+pydantic>=2.0
+python-dotenv>=1.0
+pywebview>=5.0

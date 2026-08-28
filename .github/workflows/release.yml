@@ -55,11 +55,11 @@ jobs:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: keeper/webui/package-lock.json
-      - name: 安装 Python 依赖（大脑 + 打包）
+      - name: 安装 Python 依赖（大脑 + daemon + 打包）
         run: |
           python -m pip install --upgrade pip
-          pip install -r brain/requirements.txt
-          pip install pywebview pyinstaller
+          pip install -r brain/requirements.txt -r keeper/requirements.txt
+          pip install pyinstaller
       - name: 构建 webui 前端
         run: |
           cd keeper/webui
